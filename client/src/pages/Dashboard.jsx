@@ -107,19 +107,19 @@ const Dashboard = () => {
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-4xl font-cricket font-bold text-white mb-2">
+              <h1 className="text-5xl font-cricket font-bold text-white mb-3">
                 Welcome back, {user?.username}!
               </h1>
-              <p className="text-gray-400 text-lg">
+              <p className="text-gray-400 text-xl">
                 Ready for some cricket auction action?
               </p>
             </div>
             <div className="flex items-center space-x-4">
-              <div className={`px-4 py-2 rounded-full text-white text-sm font-semibold ${getRoleColor(user?.role)}`}>
+              <div className={`px-6 py-3 rounded-full text-white text-base font-semibold ${getRoleColor(user?.role)} shadow-lg`}>
                 {user?.role?.toUpperCase()}
               </div>
               {user?.team && (
-                <div className="px-4 py-2 rounded-full bg-gray-700 text-white text-sm font-semibold">
+                <div className="px-6 py-3 rounded-full bg-gray-700 text-white text-base font-semibold shadow-lg">
                   {user.team}
                 </div>
               )}
@@ -129,18 +129,18 @@ const Dashboard = () => {
 
         {/* Connection Status */}
         <div className="mb-8">
-          <div className={`p-4 rounded-lg border ${
+          <div className={`p-6 rounded-xl border ${
             isConnected 
               ? 'bg-green-900/30 border-green-500 text-green-200' 
               : 'bg-red-900/30 border-red-500 text-red-200'
-          }`}>
+          } backdrop-blur-sm shadow-lg`}>
             <div className="flex items-center space-x-2">
               <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="font-semibold">
+              <span className="font-semibold text-lg">
                 {isConnected ? 'Connected to Auction Room' : 'Disconnected from Auction Room'}
               </span>
             </div>
-            <p className="text-sm mt-1 opacity-80">
+            <p className="text-base mt-2 opacity-80">
               {isConnected 
                 ? 'You can participate in live auctions and receive real-time updates.'
                 : 'Please check your internet connection. Some features may be limited.'
@@ -152,20 +152,20 @@ const Dashboard = () => {
         {/* Current Auction Status */}
         {isActive && currentPlayer && (
           <div className="mb-8">
-            <div className="bg-gradient-to-r from-yellow-600 to-orange-600 p-6 rounded-xl shadow-xl">
+            <div className="bg-gradient-to-r from-yellow-600 to-orange-600 p-8 rounded-2xl shadow-2xl border border-yellow-500/30">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-2 flex items-center">
-                    <Play className="h-6 w-6 mr-2" />
+                  <h3 className="text-2xl font-bold text-white mb-3 flex items-center">
+                    <Play className="h-7 w-7 mr-3" />
                     Live Auction in Progress
                   </h3>
-                  <p className="text-yellow-100">
+                  <p className="text-yellow-100 text-lg">
                     {currentPlayer.name} is currently being auctioned
                   </p>
                 </div>
                 <Link
                   to="/auction"
-                  className="bg-white text-orange-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors duration-200"
+                  className="bg-white text-orange-600 px-8 py-4 rounded-xl font-bold hover:bg-gray-100 transition-colors duration-200 text-lg shadow-lg"
                 >
                   Join Now
                 </Link>
@@ -176,48 +176,48 @@ const Dashboard = () => {
 
         {/* Stats Overview */}
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
             <div className="card">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Total Players</p>
-                  <p className="text-3xl font-bold text-white">{stats.totalPlayers}</p>
+                  <p className="text-gray-400 text-base">Total Players</p>
+                  <p className="text-4xl font-bold text-white">{stats.totalPlayers}</p>
                 </div>
-                <Users className="h-12 w-12 text-blue-500" />
+                <Users className="h-14 w-14 text-blue-500" />
               </div>
             </div>
 
             <div className="card">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Players Sold</p>
-                  <p className="text-3xl font-bold text-green-400">{stats.soldPlayers}</p>
+                  <p className="text-gray-400 text-base">Players Sold</p>
+                  <p className="text-4xl font-bold text-green-400">{stats.soldPlayers}</p>
                 </div>
-                <Trophy className="h-12 w-12 text-green-500" />
+                <Trophy className="h-14 w-14 text-green-500" />
               </div>
             </div>
 
             <div className="card">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Total Value</p>
-                  <p className="text-2xl font-bold text-yellow-400">
+                  <p className="text-gray-400 text-base">Total Value</p>
+                  <p className="text-3xl font-bold text-yellow-400">
                     {formatCurrency(stats.totalValue)}
                   </p>
                 </div>
-                <DollarSign className="h-12 w-12 text-yellow-500" />
+                <DollarSign className="h-14 w-14 text-yellow-500" />
               </div>
             </div>
 
             <div className="card">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Auction Status</p>
-                  <p className="text-xl font-bold text-white">
+                  <p className="text-gray-400 text-base">Auction Status</p>
+                  <p className="text-2xl font-bold text-white">
                     {isActive ? 'Active' : 'Inactive'}
                   </p>
                 </div>
-                <Activity className={`h-12 w-12 ${isActive ? 'text-green-500' : 'text-gray-500'}`} />
+                <Activity className={`h-14 w-14 ${isActive ? 'text-green-500' : 'text-gray-500'}`} />
               </div>
             </div>
           </div>
@@ -225,8 +225,8 @@ const Dashboard = () => {
 
         {/* Quick Actions */}
         <div className="mb-8">
-          <h2 className="text-2xl font-cricket font-bold text-white mb-6">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <h2 className="text-3xl font-cricket font-bold text-white mb-8">Quick Actions</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {quickActions.filter(action => action.available).map((action, index) => {
               const Icon = action.icon
               return (
@@ -235,12 +235,12 @@ const Dashboard = () => {
                   to={action.link}
                   className="group block"
                 >
-                  <div className={`${action.color} p-6 rounded-xl shadow-xl transform transition-all duration-200 group-hover:scale-105 group-hover:shadow-2xl`}>
-                    <Icon className="h-12 w-12 text-white mb-4" />
-                    <h3 className="text-xl font-bold text-white mb-2">
+                  <div className={`${action.color} p-8 rounded-2xl shadow-2xl transform transition-all duration-300 group-hover:scale-105 group-hover:shadow-3xl border border-white/10`}>
+                    <Icon className="h-14 w-14 text-white mb-6" />
+                    <h3 className="text-2xl font-bold text-white mb-3">
                       {action.title}
                     </h3>
-                    <p className="text-white/80 text-sm">
+                    <p className="text-white/80 text-base">
                       {action.description}
                     </p>
                   </div>
@@ -251,23 +251,23 @@ const Dashboard = () => {
         </div>
 
         {/* Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* Recently Sold Players */}
           <div className="card">
-            <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-              <Trophy className="h-6 w-6 mr-2 text-green-500" />
+            <h3 className="text-2xl font-bold text-white mb-6 flex items-center">
+              <Trophy className="h-7 w-7 mr-3 text-green-500" />
               Recently Sold Players
             </h3>
             {soldPlayers.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {soldPlayers.slice(-5).reverse().map((player, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
+                  <div key={index} className="flex items-center justify-between p-4 bg-gray-700/70 backdrop-blur-sm rounded-lg border border-gray-600/30">
                     <div>
-                      <p className="font-semibold text-white">{player.name}</p>
-                      <p className="text-sm text-gray-400">{player.soldTo}</p>
+                      <p className="font-semibold text-white text-lg">{player.name}</p>
+                      <p className="text-base text-gray-400">{player.soldTo}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-green-400">
+                      <p className="font-bold text-green-400 text-lg">
                         {formatCurrency(player.finalPrice)}
                       </p>
                     </div>
@@ -275,26 +275,26 @@ const Dashboard = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-400 text-center py-8">No players sold yet</p>
+              <p className="text-gray-400 text-center py-12 text-lg">No players sold yet</p>
             )}
           </div>
 
           {/* Team Statistics */}
           <div className="card">
-            <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-              <TrendingUp className="h-6 w-6 mr-2 text-blue-500" />
+            <h3 className="text-2xl font-bold text-white mb-6 flex items-center">
+              <TrendingUp className="h-7 w-7 mr-3 text-blue-500" />
               Team Spending
             </h3>
             {stats?.teamStats && stats.teamStats.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {stats.teamStats.slice(0, 5).map((team, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
+                  <div key={index} className="flex items-center justify-between p-4 bg-gray-700/70 backdrop-blur-sm rounded-lg border border-gray-600/30">
                     <div>
-                      <p className="font-semibold text-white">{team._id}</p>
-                      <p className="text-sm text-gray-400">{team.players} players</p>
+                      <p className="font-semibold text-white text-lg">{team._id}</p>
+                      <p className="text-base text-gray-400">{team.players} players</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-blue-400">
+                      <p className="font-bold text-blue-400 text-lg">
                         {formatCurrency(team.totalSpent)}
                       </p>
                     </div>
@@ -302,7 +302,7 @@ const Dashboard = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-400 text-center py-8">No team data available</p>
+              <p className="text-gray-400 text-center py-12 text-lg">No team data available</p>
             )}
           </div>
         </div>

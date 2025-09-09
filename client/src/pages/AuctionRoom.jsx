@@ -12,10 +12,14 @@ import {
   ShieldCheck,
   ArrowRight,
   Crown,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { placeBid, endAuctionAction, setAuctionState, startAuction, newBid, updateTimer, auctionEnded } from '../store/slices/auctionSlice';
 import { sendMessage } from '../store/slices/socketSlice';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ConfirmationModal from '../components/ConfirmationModal';
+import AuctionHammer from '../components/AuctionHammer';
 import toast from 'react-hot-toast';
 
 const AuctionRoom = () => {
@@ -36,8 +40,11 @@ const AuctionRoom = () => {
 
   const [bidAmount, setBidAmount] = useState('');
   const [chatMessage, setChatMessage] = useState('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [showHammer, setShowHammer] = useState(false);
-  const [soldStatus, setSoldStatus] = useState(null); // 'sold' or 'unsold'
+  const [hammerResult, setHammerResult] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const [activeInfoIndex, setActiveInfoIndex] = useState(0);
 
@@ -107,12 +114,8 @@ const AuctionRoom = () => {
 
   useEffect(() => {
     if (lastResult) {
-      setSoldStatus(lastResult.sold ? 'sold' : 'unsold');
+      setHammerResult(lastResult.sold ? 'sold' : 'unsold');
       setShowHammer(true);
-      setTimeout(() => {
-        setShowHammer(false);
-        setSoldStatus(null);
-      }, 4000);
     }
   }, [lastResult]);
 
@@ -133,9 +136,28 @@ const AuctionRoom = () => {
   };
 
   const handleAdminDecision = (sold) => {
-    if (isActive) {
-      dispatch(endAuctionAction({ sold }));
+    setConfirmAction({ type: sold ? 'sold' : 'unsold', sold });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction || !isActive) return;
+    
+    setIsProcessing(true);
+    try {
+      dispatch(endAuctionAction({ sold: confirmAction.sold }));
+      setShowConfirmModal(false);
+      setConfirmAction(null);
+    } catch (error) {
+      toast.error('Failed to process action');
+    } finally {
+      setIsProcessing(false);
     }
+  };
+
+  const handleHammerComplete = () => {
+    setShowHammer(false);
+    setHammerResult(null);
   };
 
   const handleSendMessage = (e) => {
@@ -167,10 +189,10 @@ const AuctionRoom = () => {
   const purchasedPlayersByTeam = activeBidder ? purchasedPlayers.filter(p => p.soldTo === activeBidder.name) : [];
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 lg:p-6 font-sans">
-      <div className="grid grid-cols-12 gap-4 h-full">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900/20 to-purple-900/20 text-white p-6 lg:p-8 font-sans">
+      <div className="grid grid-cols-12 gap-6 h-full">
         {/* Left Column */}
-        <div className="col-span-12 lg:col-span-3 space-y-4">
+        <div className="col-span-12 lg:col-span-3 space-y-6">
           <InfoCard title="Available Purse">
             <AnimatePresence mode="wait">
               {activeBidder && (
@@ -182,87 +204,53 @@ const AuctionRoom = () => {
                   transition={{ duration: 0.5 }}
                   className="space-y-2"
                 >
-                  <h3 className="text-2xl font-bold text-blue-400">{activeBidder.name}</h3>
-                  <p className="text-4xl font-bold text-neon-green">{formatCurrency(activeBidder.purse)}</p>
-                  <p className="text-lg text-gray-300">Players Purchased: {activeBidder.players.length}</p>
+                  <h3 className="text-3xl font-bold text-blue-400">{activeBidder.name}</h3>
+                  <p className="text-5xl font-bold text-neon-green">{formatCurrency(activeBidder.purse)}</p>
+                  <p className="text-xl text-gray-300">Players Purchased: {activeBidder.players.length}</p>
                 </motion.div>
               )}
             </AnimatePresence>
           </InfoCard>
           <InfoCard title="Bidding History">
-            <div className="h-96 overflow-y-auto space-y-2 pr-2">
+            <div className="h-96 overflow-y-auto space-y-3 pr-2">
               {bidHistory.slice().reverse().map((bid, index) => (
-                <div key={index} className="flex justify-between items-center bg-gray-800 p-2 rounded-lg">
+                <motion.div 
+                  key={index} 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex justify-between items-center bg-gray-800/70 backdrop-blur-sm p-3 rounded-lg border border-gray-700/50"
+                >
                   <div>
-                    <p className="font-semibold text-blue-300">{bid.team}</p>
-                    <p className="text-xs text-gray-400">{new Date(bid.timestamp).toLocaleTimeString()}</p>
+                    <p className="font-semibold text-blue-300 text-lg">{bid.team}</p>
+                    <p className="text-sm text-gray-400">{new Date(bid.timestamp).toLocaleTimeString()}</p>
                   </div>
-                  <p className="font-bold text-neon-green">{formatCurrency(bid.amount)}</p>
-                </div>
+                  <p className="font-bold text-neon-green text-lg">{formatCurrency(bid.amount)}</p>
+                </motion.div>
               ))}
             </div>
           </InfoCard>
         </div>
 
         {/* Center Column */}
-        <div className="col-span-12 lg:col-span-6 space-y-4">
-          <div className="bg-gray-900 rounded-2xl p-4 border border-blue-500/50 aspect-video flex items-center justify-center relative overflow-hidden">
+        <div className="col-span-12 lg:col-span-6 space-y-6">
+          <div className="bg-gray-900/80 backdrop-blur-xl rounded-3xl p-6 border border-blue-500/50 aspect-video flex items-center justify-center relative overflow-hidden shadow-2xl">
             {isActive && currentPlayer ? (
               <>
                 <img
                   src={currentPlayer.image || 'https://via.placeholder.com/400'}
                   alt={currentPlayer.name}
-                  className="max-h-full max-w-full object-contain rounded-lg"
+                  className="max-h-full max-w-full object-contain rounded-xl shadow-2xl"
                 />
-                <AnimatePresence>
-                  {showHammer && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center"
-                    >
-                      <motion.div
-                        initial={{ y: -200, rotate: -45 }}
-                        animate={{ y: 0, rotate: [0, -45, 0] }}
-                        transition={{
-                          rotate: {
-                            duration: 0.5,
-                            ease: "easeInOut",
-                            times: [0, 0.5, 1],
-                            repeat: 1,
-                            repeatDelay: 0.5,
-                          },
-                          default: {
-                            type: 'spring',
-                            stiffness: 100,
-                            damping: 10,
-                            delay: 0.2,
-                          },
-                        }}
-                      >
-                        <Gavel className="h-48 w-48 text-yellow-400" />
-                      </motion.div>
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ delay: 0.8, duration: 0.3 }}
-                        className={`mt-8 text-7xl font-extrabold tracking-wider border-4 p-4 rounded-xl ${
-                          soldStatus === 'sold'
-                            ? 'text-green-400 border-green-400'
-                            : 'text-red-500 border-red-500'
-                        }`}
-                      >
-                        {soldStatus === 'sold' ? 'SOLD' : 'UNSOLD'}
-                      </motion.div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <AuctionHammer 
+                  isVisible={showHammer}
+                  result={hammerResult}
+                  onAnimationComplete={handleHammerComplete}
+                />
               </>
             ) : (
               <div className="text-center text-gray-500">
-                <Gavel size={64} className="mx-auto mb-4" />
-                <h2 className="text-2xl">Waiting for next auction...</h2>
+                <Gavel size={80} className="mx-auto mb-6 text-gray-600" />
+                <h2 className="text-3xl font-semibold">Waiting for next auction...</h2>
               </div>
             )}
           </div>
@@ -285,7 +273,7 @@ const AuctionRoom = () => {
         </div>
 
         {/* Right Column */}
-        <div className="col-span-12 lg:col-span-3 space-y-4">
+        <div className="col-span-12 lg:col-span-3 space-y-6">
           <InfoCard title="Purchased Players">
             <AnimatePresence mode="wait">
               {activeBidder && (
@@ -295,13 +283,13 @@ const AuctionRoom = () => {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.5 }}
-                  className="h-64 overflow-y-auto space-y-2 pr-2"
+                  className="h-64 overflow-y-auto space-y-3 pr-2"
                 >
-                  <h3 className="text-xl font-bold text-blue-400 mb-2">{activeBidder.name}</h3>
+                  <h3 className="text-2xl font-bold text-blue-400 mb-3">{activeBidder.name}</h3>
                   {purchasedPlayersByTeam.map((player) => (
-                    <div key={player.id} className="flex justify-between items-center bg-gray-800 p-2 rounded-lg">
-                      <p className="font-semibold">{player.name}</p>
-                      <p className="text-sm text-neon-green">{formatCurrency(player.finalPrice)}</p>
+                    <div key={player.id} className="flex justify-between items-center bg-gray-800/70 backdrop-blur-sm p-3 rounded-lg border border-gray-700/50">
+                      <p className="font-semibold text-lg">{player.name}</p>
+                      <p className="text-base text-neon-green font-bold">{formatCurrency(player.finalPrice)}</p>
                     </div>
                   ))}
                 </motion.div>
@@ -310,39 +298,65 @@ const AuctionRoom = () => {
           </InfoCard>
           <InfoCard title="Live Chat">
             <div className="flex flex-col h-96">
-              <div className="flex-grow overflow-y-auto mb-2 space-y-2 pr-2">
+              <div className="flex-grow overflow-y-auto mb-3 space-y-3 pr-2">
                 {messages.map((msg, index) => (
-                  <div key={index} className="text-sm">
-                    <span className="font-semibold text-blue-300">{msg.user}: </span>
-                    <span className="text-gray-200">{msg.message}</span>
+                  <motion.div 
+                    key={index} 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gray-800/50 backdrop-blur-sm p-3 rounded-lg border border-gray-700/30"
+                  >
+                    <span className="font-semibold text-blue-300 text-base">{msg.user}: </span>
+                    <span className="text-gray-200 text-base">{msg.message}</span>
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
               </div>
-              <form onSubmit={handleSendMessage} className="flex space-x-2">
+              <form onSubmit={handleSendMessage} className="flex space-x-3">
                 <input
                   type="text"
                   value={chatMessage}
                   onChange={(e) => setChatMessage(e.target.value)}
                   placeholder="Type a message..."
-                  className="input-field flex-1"
+                  className="input-field flex-1 text-lg"
                 />
-                <button type="submit" className="btn-primary p-3">
-                  <Send size={18} />
+                <button type="submit" className="btn-primary p-4">
+                  <Send size={20} />
                 </button>
               </form>
             </div>
           </InfoCard>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onClose={() => {
+          setShowConfirmModal(false);
+          setConfirmAction(null);
+        }}
+        onConfirm={handleConfirmAction}
+        title={confirmAction?.type === 'sold' ? 'Mark Player as Sold' : 'Mark Player as Unsold'}
+        message={
+          confirmAction?.type === 'sold' 
+            ? 'Are you sure you want to mark this player as SOLD? This action will finalize the auction for this player.'
+            : 'Are you sure you want to mark this player as UNSOLD? This player will not be assigned to any team.'
+        }
+        type={confirmAction?.type === 'sold' ? 'success' : 'error'}
+        confirmText={confirmAction?.type === 'sold' ? 'Mark as Sold' : 'Mark as Unsold'}
+        playerName={currentPlayer?.name}
+        currentBid={currentBid}
+        isLoading={isProcessing}
+      />
     </div>
   );
 };
 
 const InfoCard = ({ title, children }) => (
-  <div className="bg-gray-900 rounded-2xl p-4 border border-blue-500/30 h-full">
-    <h2 className="text-xl font-bold text-blue-400 mb-3 flex items-center">
-      <ShieldCheck size={20} className="mr-2 text-neon-green" />
+  <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-6 border border-blue-500/30 h-full shadow-xl">
+    <h2 className="text-2xl font-bold text-blue-400 mb-4 flex items-center">
+      <ShieldCheck size={24} className="mr-3 text-neon-green" />
       {title}
     </h2>
     {children}
@@ -355,63 +369,73 @@ const PlayerInfoCard = ({ player, basePrice, currentBid, timer, onBid, bidAmount
   const timerColor = timer <= 10 ? 'text-red-500' : timer <= 20 ? 'text-yellow-400' : 'text-neon-green';
 
   return (
-    <div className="bg-gray-900 rounded-2xl p-4 border border-blue-500/50 relative">
-      <div className="absolute top-4 right-4 flex flex-col items-center">
-        <div className={`text-5xl font-bold ${timerColor} bg-black/50 rounded-full w-24 h-24 flex items-center justify-center border-2 ${timerColor.replace('text-', 'border-')}`}>
+    <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-6 border border-blue-500/50 relative shadow-xl">
+      <div className="absolute top-6 right-6 flex flex-col items-center">
+        <motion.div 
+          animate={{ 
+            scale: timer <= 10 ? [1, 1.1, 1] : 1,
+            boxShadow: timer <= 10 ? ['0 0 0 0 rgba(239, 68, 68, 0.7)', '0 0 0 10px rgba(239, 68, 68, 0)', '0 0 0 0 rgba(239, 68, 68, 0)'] : 'none'
+          }}
+          transition={{ 
+            duration: 1,
+            repeat: timer <= 10 ? Infinity : 0
+          }}
+          className={`text-6xl font-bold ${timerColor} bg-black/70 backdrop-blur-sm rounded-full w-28 h-28 flex items-center justify-center border-3 ${timerColor.replace('text-', 'border-')} shadow-2xl`}
+        >
           {timer}
-        </div>
-        <Timer size={20} className={`mt-2 ${timerColor}`} />
+        </motion.div>
+        <Timer size={24} className={`mt-3 ${timerColor}`} />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <h2 className="text-4xl font-extrabold text-white">{player.name}</h2>
-          <p className="text-lg text-gray-400">{player.role} | {player.country}</p>
-          <div className="flex space-x-4 mt-4 text-center">
+          <h2 className="text-5xl font-extrabold text-white mb-2">{player.name}</h2>
+          <p className="text-xl text-gray-400 mb-4">{player.role} | {player.country}</p>
+          <div className="flex space-x-6 mt-6 text-center">
             <div>
-              <p className="text-sm text-gray-400">Age</p>
-              <p className="text-xl font-semibold">{player.age || 'N/A'}</p>
+              <p className="text-base text-gray-400">Age</p>
+              <p className="text-2xl font-semibold">{player.age || 'N/A'}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400">Key Stats</p>
-              <p className="text-xl font-semibold">{player.stats || 'N/A'}</p>
+              <p className="text-base text-gray-400">Key Stats</p>
+              <p className="text-2xl font-semibold">{player.stats || 'N/A'}</p>
             </div>
           </div>
         </div>
-        <div className="space-y-3">
-          <div className="bg-blue-900/50 p-3 rounded-lg">
-            <p className="text-sm text-blue-300">Base Price</p>
-            <p className="text-2xl font-bold">{formatCurrency(basePrice)}</p>
+        <div className="space-y-4">
+          <div className="bg-blue-900/50 backdrop-blur-sm p-4 rounded-lg border border-blue-500/30">
+            <p className="text-base text-blue-300">Base Price</p>
+            <p className="text-3xl font-bold">{formatCurrency(basePrice)}</p>
           </div>
-          <div className="bg-green-900/50 p-3 rounded-lg">
-            <p className="text-sm text-green-300">Current Bid</p>
-            <p className="text-3xl font-bold">{formatCurrency(currentBid)}</p>
+          <div className="bg-green-900/50 backdrop-blur-sm p-4 rounded-lg border border-green-500/30">
+            <p className="text-base text-green-300">Current Bid</p>
+            <p className="text-4xl font-bold">{formatCurrency(currentBid)}</p>
           </div>
         </div>
       </div>
 
       {userRole === 'bidder' && (
-        <div className="mt-4 pt-4 border-t border-gray-700">
-          <form onSubmit={onBid} className="flex flex-col sm:flex-row gap-2">
+        <div className="mt-6 pt-6 border-t border-gray-700">
+          <form onSubmit={onBid} className="flex flex-col sm:flex-row gap-3">
             <input
               type="text"
               value={bidAmount}
               onChange={(e) => setBidAmount(e.target.value)}
               placeholder="Enter bid amount"
-              className="input-field flex-grow text-lg"
+              className="input-field flex-grow text-xl"
               inputMode="numeric"
             />
-            <button type="submit" className="btn-primary flex-shrink-0 text-lg">
-              <Gavel size={20} className="mr-2" />
+            <button type="submit" className="btn-primary flex-shrink-0 text-xl px-8 py-4">
+              <Gavel size={24} className="mr-3" />
               Place Bid
             </button>
           </form>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-3">
             {[100000, 500000, 1000000].map((inc) => (
               <button
                 key={inc}
                 onClick={() => setBidAmount(String(currentBid + inc))}
-                className="btn-secondary text-xs"
+                className="btn-secondary text-base px-4 py-2"
               >
                 + {formatCurrency(inc)}
               </button>
@@ -424,10 +448,30 @@ const PlayerInfoCard = ({ player, basePrice, currentBid, timer, onBid, bidAmount
 };
 
 const AdminControls = ({ onAdminDecision, isActive }) => (
-  <div className="bg-gray-900 rounded-2xl p-4 border border-blue-500/50 flex justify-around items-center">
-    <h3 className="text-lg font-bold text-blue-400">Admin Controls</h3>
-    <button onClick={() => onAdminDecision(true)} className="btn-primary" disabled={!isActive}>Mark Sold</button>
-    <button onClick={() => onAdminDecision(false)} className="btn-secondary" disabled={!isActive}>Mark Unsold</button>
+  <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-6 border border-blue-500/50 shadow-xl">
+    <h3 className="text-2xl font-bold text-blue-400 mb-6 text-center">Admin Controls</h3>
+    <div className="flex justify-center space-x-6">
+      <motion.button 
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => onAdminDecision(true)} 
+        className="bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-xl transition-all duration-200 flex items-center space-x-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-lg" 
+        disabled={!isActive}
+      >
+        <CheckCircle size={24} />
+        <span>Mark Sold</span>
+      </motion.button>
+      <motion.button 
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => onAdminDecision(false)} 
+        className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-8 rounded-xl transition-all duration-200 flex items-center space-x-3 text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-lg" 
+        disabled={!isActive}
+      >
+        <XCircle size={24} />
+        <span>Mark Unsold</span>
+      </motion.button>
+    </div>
   </div>
 );
 
