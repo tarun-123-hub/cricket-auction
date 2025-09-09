@@ -19,6 +19,12 @@ export default {
           800: '#075985',
           900: '#0c4a6e',
         },
+                'neon-green': '#39FF14',
+        primary: {
+          DEFAULT: '#0A192F',
+          light: '#172A45',
+        },
+        secondary: '#64FFDA',
         cricket: {
           green: '#4ade80',
           gold: '#fbbf24',

@@ -60,6 +60,42 @@ export const initializeSocket = () => (dispatch, getState) => {
     return
   }
 
+  // Demo mode: stub a socket connection when using local demo login
+  const isDemo = typeof auth.token === 'string' && auth.token.startsWith('local_dev_token')
+  if (isDemo) {
+    try {
+      // Keep handlers in closure so Redux freezing doesn't block updates
+      const handlers = {}
+      const mockSocket = {
+        connected: true,
+        on: (event, cb) => { handlers[event] = cb },
+        off: (event) => { delete handlers[event] },
+        emit: (event, payload) => {
+          // Minimal event routing for demo
+          if (event === 'send-message') {
+            const message = {
+              user: auth.user?.username || 'user',
+              role: auth.user?.role || 'spectator',
+              message: payload?.text || '',
+              timestamp: Date.now(),
+            }
+            handlers['new-message'] && handlers['new-message'](message)
+            return
+          }
+          handlers[event] && handlers[event](payload)
+        },
+        disconnect: () => {},
+      }
+      dispatch(setSocket(mockSocket))
+      dispatch(setConnected(true))
+      toast.success('Connected (demo mode)')
+      return mockSocket
+    } catch (e) {
+      console.error('Demo socket init error', e)
+      dispatch(setConnected(true))
+    }
+  }
+
   try {
     const socket = io('http://localhost:5000', {
       auth: {
@@ -93,6 +129,14 @@ export const initializeSocket = () => (dispatch, getState) => {
     socket.on('new-message', (message) => {
       dispatch(addMessage(message))
     })
+
+    // Event announcements
+    socket.on('event-activated', (payload) => {
+      toast.success(`Live Event: ${payload.eventName}`)
+    })
+
+    // Mirror: update redux auction state minimal without importing store slice here
+    // This keeps the toast and leaves state syncing to existing listeners
 
     // Store socket instance
     dispatch(setSocket(socket))

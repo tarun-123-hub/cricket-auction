@@ -34,11 +34,15 @@ const ProtectedRoute = ({ children, requiredRole = null }) => {
 
 function App() {
   const dispatch = useDispatch()
-  const { isLoading, isAuthenticated, user } = useSelector((state) => state.auth)
+  const { isLoading, isAuthenticated, user, token } = useSelector((state) => state.auth)
 
   useEffect(() => {
-    dispatch(checkAuth())
-  }, [dispatch])
+    const isDemo = typeof token === 'string' && token.startsWith('local_dev_token')
+    if (!isDemo) {
+      dispatch(checkAuth())
+    }
+    // In demo mode, skip server check; nothing to do
+  }, [dispatch, token])
 
   useEffect(() => {
     if (isAuthenticated && user) {

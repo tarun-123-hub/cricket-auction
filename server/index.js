@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const session = require('express-session');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -11,6 +12,7 @@ const playerRoutes = require('./routes/players');
 const auctionRoutes = require('./routes/auction');
 const { connectDB } = require('./config/database');
 const { authenticateSocket } = require('./middleware/auth');
+const Player = require('./models/Player');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,7 +21,7 @@ const server = http.createServer(app);
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://your-domain.com'] 
-    : ['http://localhost:3000', 'http://localhost:5173'],
+    : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001'], // Added http://localhost:3001
   credentials: true
 };
 
@@ -40,8 +42,22 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Body parsing middleware
+// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Session middleware
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'a-very-strong-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 1 day
+  }
+});
+app.use(sessionMiddleware);
 
 // Static files
 app.use('/uploads', express.static('uploads'));
@@ -57,15 +73,26 @@ app.use('/api/auction', auctionRoutes);
 // Global auction state
 let auctionState = {
   isActive: false,
+  isEventLive: false,
+  eventName: '',
+  eventDescription: '',
+  maxPlayers: 0,
+  eventPlayers: [],
   currentPlayer: null,
   currentBid: 0,
   baseBid: 0,
   bidders: [],
-  timer: 30,
+  timer: 60,
   soldPlayers: [],
   unsoldPlayers: [],
   teams: {}
 };
+
+// Socket.IO connection handling
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, {}, next);
+});
+io.use(authenticateSocket);
 
 // Socket.IO connection handling
 io.use(authenticateSocket);
@@ -81,39 +108,115 @@ io.on('connection', (socket) => {
   
   // Admin controls
   if (socket.user.role === 'admin') {
+    socket.on('activate-event', (payload) => {
+      auctionState.isEventLive = true;
+      auctionState.eventName = payload.eventName || auctionState.eventName;
+      auctionState.eventDescription = payload.eventDescription || '';
+      auctionState.maxPlayers = Number(payload.maxPlayers || 0);
+      auctionState.eventPlayers = Array.isArray(payload.eventPlayers) ? payload.eventPlayers : [];
+      io.emit('event-activated', {
+        eventName: auctionState.eventName,
+        maxPlayers: auctionState.maxPlayers
+      });
+    });
     socket.on('start-auction', (playerData) => {
       auctionState.isActive = true;
       auctionState.currentPlayer = playerData;
       auctionState.currentBid = playerData.basePrice;
       auctionState.baseBid = playerData.basePrice;
       auctionState.bidders = [];
-      auctionState.timer = 30;
+      auctionState.timer = 60;
       
       io.emit('auction-started', auctionState);
       startTimer();
     });
     
-    socket.on('end-auction', (result) => {
+    socket.on('end-auction', async (result) => {
+      console.log('Server: Received end-auction event with result:', result);
       auctionState.isActive = false;
+
+      if (auctionState.currentPlayer) {
+        console.log('Server: Current player in auctionState:', auctionState.currentPlayer.name);
+        try {
+          const player = await Player.findById(auctionState.currentPlayer._id);
+          if (player) {
+            console.log('Server: Found player in DB:', player.name);
+            
+            let winningTeam = null;
+            if (result.sold && auctionState.bidders.length > 0) {
+              winningTeam = auctionState.bidders[auctionState.bidders.length - 1].team;
+            }
+
+            player.auctionStatus = result.sold && winningTeam ? 'sold' : 'unsold';
+            
+            if (result.sold && winningTeam) {
+              player.finalPrice = auctionState.currentBid;
+              player.soldTo = winningTeam;
+            } else {
+              player.finalPrice = null;
+              player.soldTo = null;
+            }
+            await player.save();
+            console.log('Server: Player status updated and saved to DB:', player.name, player.auctionStatus);
+
+            // Update in-memory state after successful DB save
+            if (result.sold && winningTeam) {
+              auctionState.soldPlayers.push({
+                ...auctionState.currentPlayer,
+                finalPrice: auctionState.currentBid,
+                soldTo: winningTeam,
+                soldAt: new Date()
+              });
+            } else {
+              auctionState.unsoldPlayers.push(auctionState.currentPlayer);
+            }
+            
+            io.emit('auction-ended', {
+              player: auctionState.currentPlayer,
+              result: { sold: result.sold && winningTeam, team: winningTeam },
+              soldPlayers: auctionState.soldPlayers,
+              unsoldPlayers: auctionState.unsoldPlayers
+            });
+            console.log('Server: Emitted auction-ended event.');
+
+          } else {
+            console.log('Server: Player not found in DB for ID:', auctionState.currentPlayer._id);
+          }
+        } catch (error) {
+          console.error('Server: Error updating player status in DB:', error);
+          socket.emit('auction-error', 'Failed to update player status in database.');
+        }
+      } else {
+        console.log('Server: auctionState.currentPlayer is null or undefined when end-auction received.');
+      }
       
-      if (result.sold) {
+      auctionState.currentPlayer = null;
+      auctionState.currentBid = 0;
+      auctionState.bidders = [];
+    });
+    // Admin sold/unsold quick actions
+    socket.on('admin-result', (data) => {
+      if (!auctionState.currentPlayer) return;
+      const sold = !!data?.sold;
+      const team = data?.team || 'AdminDecision';
+      const result = sold ? { sold: true, team } : { sold: false };
+      io.emit('auction-ended', {
+        player: auctionState.currentPlayer,
+        result,
+        soldPlayers: auctionState.soldPlayers,
+        unsoldPlayers: auctionState.unsoldPlayers
+      });
+      auctionState.isActive = false;
+      if (sold) {
         auctionState.soldPlayers.push({
           ...auctionState.currentPlayer,
           finalPrice: auctionState.currentBid,
-          soldTo: result.team,
+          soldTo: team,
           soldAt: new Date()
         });
       } else {
         auctionState.unsoldPlayers.push(auctionState.currentPlayer);
       }
-      
-      io.emit('auction-ended', {
-        player: auctionState.currentPlayer,
-        result: result,
-        soldPlayers: auctionState.soldPlayers,
-        unsoldPlayers: auctionState.unsoldPlayers
-      });
-      
       auctionState.currentPlayer = null;
       auctionState.currentBid = 0;
       auctionState.bidders = [];
@@ -143,7 +246,7 @@ io.on('connection', (socket) => {
       });
       
       // Reset timer on new bid
-      auctionState.timer = 30;
+      auctionState.timer = 60;
       
       io.emit('new-bid', {
         bidder: socket.user.username,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
-import { logoutUser } from '../store/slices/authSlice'
+import { logoutUser, localLogout } from '../store/slices/authSlice'
 import { disconnect } from '../store/slices/socketSlice'
 import { 
   Home, 
@@ -23,11 +23,14 @@ const Navbar = () => {
   const location = useLocation()
   const { user } = useSelector((state) => state.auth)
   const { isConnected } = useSelector((state) => state.socket)
+  const { isEventLive, eventName } = useSelector((state) => state.auction)
 
   const handleLogout = () => {
     dispatch(disconnect())
-    dispatch(logoutUser())
+    // Use local logout for demo; if server session exists, also call logoutUser safely
+    dispatch(localLogout())
     navigate('/login')
+    try { dispatch(logoutUser()) } catch (_) {}
   }
 
   const navItems = [
@@ -77,6 +80,12 @@ const Navbar = () => {
                   </Link>
                 )
               })}
+
+              {isEventLive && (
+                <div className="px-3 py-2 rounded-md text-sm font-semibold bg-green-600 text-white">
+                  Live: {eventName || 'Auction Event'}
+                </div>
+              )}
 
               {user?.role === 'admin' && (
                 <>

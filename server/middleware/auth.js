@@ -1,49 +1,20 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-const authenticateToken = async (req, res, next) => {
-  try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({ message: 'Access token required' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId).select('-password');
-    
-    if (!user || !user.isActive) {
-      return res.status(401).json({ message: 'Invalid or inactive user' });
-    }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    return res.status(403).json({ message: 'Invalid or expired token' });
+const authenticate = (req, res, next) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ message: 'Not authenticated' });
   }
+  req.user = req.session.user;
+  next();
 };
 
-const authenticateSocket = async (socket, next) => {
-  try {
-    const token = socket.handshake.auth.token;
-    
-    if (!token) {
-      return next(new Error('Authentication error'));
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId).select('-password');
-    
-    if (!user || !user.isActive) {
-      return next(new Error('Invalid or inactive user'));
-    }
-
-    socket.user = user;
-    next();
-  } catch (error) {
-    next(new Error('Authentication error'));
+const authenticateSocket = (socket, next) => {
+  const session = socket.request.session;
+  if (!session || !session.user) {
+    return next(new Error('Authentication error'));
   }
+  socket.user = session.user;
+  next();
 };
 
 const requireRole = (roles) => {
@@ -56,7 +27,7 @@ const requireRole = (roles) => {
 };
 
 module.exports = {
-  authenticateToken,
+  authenticate,
   authenticateSocket,
   requireRole
 };

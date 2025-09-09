@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const Player = require('../models/Player');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -43,7 +43,8 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Get all players
-router.get('/', authenticateToken, async (req, res) => {
+// Get all players
+router.get('/', authenticate, async (req, res) => {
   try {
     const { status, role, country } = req.query;
     let query = { isActive: true };
@@ -61,7 +62,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get single player
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id', authenticate, async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
     if (!player) {
@@ -75,44 +76,50 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // Create new player (Admin only)
-router.post('/', authenticateToken, requireRole(['admin']), upload.single('image'), async (req, res) => {
-  try {
-    const playerData = {
-      ...req.body,
-      basePrice: parseInt(req.body.basePrice),
-      age: parseInt(req.body.age)
-    };
+router.post(
+  '/',
+  authenticate,
+  requireRole(['admin']),
+  upload.single('image'),
+  async (req, res) => {
+    try {
+      const playerData = {
+        ...req.body,
+        basePrice: parseInt(req.body.basePrice),
+        age: parseInt(req.body.age)
+      };
 
-    if (req.file) {
-      playerData.image = `/uploads/players/${req.file.filename}`;
-    }
-
-    // Parse stats if provided
-    if (req.body.stats) {
-      try {
-        playerData.stats = typeof req.body.stats === 'string' 
-          ? JSON.parse(req.body.stats) 
-          : req.body.stats;
-      } catch (e) {
-        console.error('Error parsing stats:', e);
+      if (req.file) {
+        playerData.image = `/uploads/players/${req.file.filename}`;
       }
+
+      // Parse stats if provided
+      if (req.body.stats) {
+        try {
+          playerData.stats = typeof req.body.stats === 'string' 
+            ? JSON.parse(req.body.stats) 
+            : req.body.stats;
+        } catch (e) {
+          console.error('Error parsing stats:', e);
+        }
+      }
+
+      const player = new Player(playerData);
+      await player.save();
+
+      res.status(201).json({
+        message: 'Player created successfully',
+        player
+      });
+    } catch (error) {
+      console.error('Error creating player:', error);
+      res.status(500).json({ message: 'Server error' });
     }
-
-    const player = new Player(playerData);
-    await player.save();
-
-    res.status(201).json({
-      message: 'Player created successfully',
-      player
-    });
-  } catch (error) {
-    console.error('Error creating player:', error);
-    res.status(500).json({ message: 'Server error' });
   }
-});
+);
 
 // Update player (Admin only)
-router.put('/:id', authenticateToken, requireRole(['admin']), upload.single('image'), async (req, res) => {
+router.put('/:id', authenticate, requireRole(['admin']), upload.single('image'), async (req, res) => {
   try {
     const updateData = {
       ...req.body,
@@ -156,7 +163,7 @@ router.put('/:id', authenticateToken, requireRole(['admin']), upload.single('ima
 });
 
 // Delete player (Admin only)
-router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.delete('/:id', authenticate, requireRole(['admin']), async (req, res) => {
   try {
     const player = await Player.findByIdAndUpdate(
       req.params.id,
@@ -176,7 +183,7 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req, res
 });
 
 // Update auction status (Admin only)
-router.patch('/:id/auction-status', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.patch('/:id/auction-status', authenticate, requireRole(['admin']), async (req, res) => {
   try {
     const { status, soldTo, finalPrice } = req.body;
     

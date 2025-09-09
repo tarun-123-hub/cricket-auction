@@ -4,20 +4,14 @@ import toast from 'react-hot-toast'
 
 // Configure axios defaults
 axios.defaults.baseURL = 'http://localhost:5000'
+axios.defaults.withCredentials = true; // Send cookies with requests
 
 // Async thunks
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
-  async ({ email, password }, { rejectWithValue }) => {
+  async ({ username, password }, { rejectWithValue }) => {
     try {
-      const response = await axios.post('/api/auth/login', { email, password })
-      
-      // Store token in localStorage
-      localStorage.setItem('token', response.data.token)
-      
-      // Set default authorization header
-      axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`
-      
+      const response = await axios.post('/api/auth/login', { username, password })
       toast.success('Login successful!')
       return response.data
     } catch (error) {
@@ -33,13 +27,6 @@ export const registerUser = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const response = await axios.post('/api/auth/register', userData)
-      
-      // Store token in localStorage
-      localStorage.setItem('token', response.data.token)
-      
-      // Set default authorization header
-      axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`
-      
       toast.success('Registration successful!')
       return response.data
     } catch (error) {
@@ -54,23 +41,10 @@ export const checkAuth = createAsyncThunk(
   'auth/checkAuth',
   async (_, { rejectWithValue }) => {
     try {
-      const token = localStorage.getItem('token')
-      
-      if (!token) {
-        return rejectWithValue('No token found')
-      }
-      
-      // Set default authorization header
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-      
       const response = await axios.get('/api/auth/me')
-      return { ...response.data, token }
+      return response.data
     } catch (error) {
-      // Clear invalid token
-      localStorage.removeItem('token')
-      delete axios.defaults.headers.common['Authorization']
-      
-      return rejectWithValue('Token validation failed')
+      return rejectWithValue('Not authenticated')
     }
   }
 )
@@ -80,26 +54,34 @@ export const logoutUser = createAsyncThunk(
   async (_, { dispatch }) => {
     try {
       await axios.post('/api/auth/logout')
-    } catch (error) {
-      // Continue with logout even if API call fails
-      console.error('Logout API error:', error)
-    } finally {
-      // Clear local storage and axios headers
-      localStorage.removeItem('token')
-      delete axios.defaults.headers.common['Authorization']
-      
       toast.success('Logged out successfully')
+    } catch (error) {
+      console.error('Logout API error:', error)
     }
   }
 )
 
+// Helpers for demo/local storage persistence
+const STORAGE_KEY = 'demo_auth_state'
+const getStoredAuth = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch (_) {
+    return null
+  }
+}
+
+const stored = getStoredAuth()
+
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
-    user: null,
-    token: null,
-    isAuthenticated: false,
-    isLoading: true,
+    user: stored?.user || null,
+    isAuthenticated: stored?.isAuthenticated || false,
+    isLoading: false,
+    token: stored?.token || null,
     error: null,
   },
   reducers: {
@@ -108,6 +90,48 @@ const authSlice = createSlice({
     },
     updateUser: (state, action) => {
       state.user = { ...state.user, ...action.payload }
+    },
+    // Simple local login to bypass server auth
+    localLogin: (state, action) => {
+      const { username, password } = action.payload || {}
+      const demoUsers = {
+        admin: { password: 'admin123', role: 'admin' },
+        bidder: { password: 'bidder123', role: 'bidder' },
+        spectator: { password: 'spectator123', role: 'spectator' },
+      }
+
+      const found = demoUsers[username?.trim()?.toLowerCase?.()] || null
+
+      if (!found || found.password !== password) {
+        state.isAuthenticated = false
+        state.user = null
+        state.token = null
+        state.isLoading = false
+        state.error = 'Invalid username or password'
+        return
+      }
+
+      state.isAuthenticated = true
+      state.user = { username, role: found.role }
+      state.token = `local_dev_token_${found.role}`
+      state.isLoading = false
+      state.error = null
+
+      // Persist demo auth
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          isAuthenticated: true,
+          user: state.user,
+          token: state.token,
+        }))
+      } catch (_) {}
+    },
+    localLogout: (state) => {
+      state.isAuthenticated = false
+      state.user = null
+      state.token = null
+      state.error = null
+      try { localStorage.removeItem(STORAGE_KEY) } catch (_) {}
     },
   },
   extraReducers: (builder) => {
@@ -121,14 +145,12 @@ const authSlice = createSlice({
         state.isLoading = false
         state.isAuthenticated = true
         state.user = action.payload.user
-        state.token = action.payload.token
         state.error = null
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false
         state.isAuthenticated = false
         state.user = null
-        state.token = null
         state.error = action.payload
       })
       
@@ -141,14 +163,12 @@ const authSlice = createSlice({
         state.isLoading = false
         state.isAuthenticated = true
         state.user = action.payload.user
-        state.token = action.payload.token
         state.error = null
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.isLoading = false
         state.isAuthenticated = false
         state.user = null
-        state.token = null
         state.error = action.payload
       })
       
@@ -160,14 +180,12 @@ const authSlice = createSlice({
         state.isLoading = false
         state.isAuthenticated = true
         state.user = action.payload.user
-        state.token = action.payload.token
         state.error = null
       })
       .addCase(checkAuth.rejected, (state) => {
         state.isLoading = false
         state.isAuthenticated = false
         state.user = null
-        state.token = null
         state.error = null
       })
       
@@ -175,11 +193,10 @@ const authSlice = createSlice({
       .addCase(logoutUser.fulfilled, (state) => {
         state.isAuthenticated = false
         state.user = null
-        state.token = null
         state.error = null
       })
   },
 })
 
-export const { clearError, updateUser } = authSlice.actions
+export const { clearError, updateUser, localLogin, localLogout } = authSlice.actions
 export default authSlice.reducer

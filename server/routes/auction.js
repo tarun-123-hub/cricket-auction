@@ -1,11 +1,12 @@
 const express = require('express');
 const Player = require('../models/Player');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
 // Get auction statistics
-router.get('/stats', authenticateToken, async (req, res) => {
+// Get auction statistics
+router.get('/stats', authenticate, async (req, res) => {
   try {
     const totalPlayers = await Player.countDocuments({ isActive: true });
     const soldPlayers = await Player.countDocuments({ auctionStatus: 'sold' });
@@ -44,7 +45,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
 });
 
 // Get sold players
-router.get('/sold', authenticateToken, async (req, res) => {
+router.get('/sold', authenticate, async (req, res) => {
   try {
     const soldPlayers = await Player.find({ auctionStatus: 'sold' })
       .sort({ updatedAt: -1 });
@@ -56,7 +57,7 @@ router.get('/sold', authenticateToken, async (req, res) => {
 });
 
 // Get unsold players
-router.get('/unsold', authenticateToken, async (req, res) => {
+router.get('/unsold', authenticate, async (req, res) => {
   try {
     const unsoldPlayers = await Player.find({ auctionStatus: 'unsold' })
       .sort({ updatedAt: -1 });
@@ -68,7 +69,7 @@ router.get('/unsold', authenticateToken, async (req, res) => {
 });
 
 // Reset auction (Admin only)
-router.post('/reset', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.post('/reset', authenticate, requireRole(['admin']), async (req, res) => {
   try {
     await Player.updateMany(
       {},

@@ -148,6 +148,25 @@ const playersSlice = createSlice({
         state.players[index] = action.payload
       }
     },
+    // Demo mode: add/delete players locally without server
+    addPlayerLocal: (state, action) => {
+      const player = {
+        _id: `local_${Date.now()}`,
+        name: action.payload.name,
+        role: action.payload.role || 'Batsman',
+        basePrice: Number(action.payload.basePrice) || 0,
+        country: action.payload.country || 'India',
+        stats: action.payload.stats || '',
+        image: action.payload.image || null, // data URL for preview in demo mode
+      }
+      state.players.unshift(player)
+    },
+    deletePlayerLocal: (state, action) => {
+      state.players = state.players.filter(p => p._id !== action.payload)
+      if (state.selectedPlayer?._id === action.payload) {
+        state.selectedPlayer = null
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -236,6 +255,8 @@ export const {
   setFilters,
   clearError,
   updatePlayerInList,
+  addPlayerLocal,
+  deletePlayerLocal,
 } = playersSlice.actions
 
 export default playersSlice.reducer

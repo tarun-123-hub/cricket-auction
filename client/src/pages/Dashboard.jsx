@@ -13,7 +13,7 @@ import {
   TrendingUp,
   Activity
 } from 'lucide-react'
-import axios from 'axios'
+import axios from '../api/axios'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 const Dashboard = () => {
