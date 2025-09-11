@@ -16,6 +16,8 @@ import AuctionRoom from './pages/AuctionRoom'
 import AdminPanel from './pages/AdminPanel'
 import PlayerManagement from './pages/PlayerManagement'
 import AuctionStats from './pages/AuctionStats'
+import AuctionSummary from './pages/AuctionSummary'
+import BidderThankYou from './pages/BidderThankYou'
 
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole = null }) => {
@@ -117,6 +119,24 @@ function App() {
             element={
               <ProtectedRoute requiredRole="admin">
                 <PlayerManagement />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/auction-summary" 
+            element={
+              <ProtectedRoute>
+                <AuctionSummary />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/bidder-thank-you" 
+            element={
+              <ProtectedRoute requiredRole="bidder">
+                <BidderThankYou />
               </ProtectedRoute>
             } 
           />

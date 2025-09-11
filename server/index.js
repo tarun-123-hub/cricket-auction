@@ -85,7 +85,15 @@ let auctionState = {
   timer: 60,
   soldPlayers: [],
   unsoldPlayers: [],
-  teams: {}
+  teams: {
+    'Team A': { name: 'Team A', purse: 10000000, players: [] },
+    'Team B': { name: 'Team B', purse: 10000000, players: [] },
+    'Team C': { name: 'Team C', purse: 10000000, players: [] },
+    'Team D': { name: 'Team D', purse: 10000000, players: [] }
+  },
+  remainingPlayers: [],
+  currentPlayerIndex: 0,
+  isEventComplete: false
 };
 
 // Socket.IO connection handling
@@ -127,8 +135,37 @@ io.on('connection', (socket) => {
       auctionState.bidders = [];
       auctionState.timer = 60;
       
+      // Set remaining players if not already set
+      if (auctionState.remainingPlayers.length === 0 && auctionState.eventPlayers.length > 0) {
+        auctionState.remainingPlayers = [...auctionState.eventPlayers];
+      }
+      
       io.emit('auction-started', auctionState);
       startTimer();
+    });
+    
+    socket.on('start-next-player', () => {
+      if (auctionState.remainingPlayers.length > 0) {
+        const nextPlayer = auctionState.remainingPlayers[0];
+        auctionState.isActive = true;
+        auctionState.currentPlayer = nextPlayer;
+        auctionState.currentBid = nextPlayer.basePrice;
+        auctionState.baseBid = nextPlayer.basePrice;
+        auctionState.bidders = [];
+        auctionState.timer = 60;
+        auctionState.currentPlayerIndex++;
+        
+        io.emit('auction-started', auctionState);
+        startTimer();
+      } else {
+        auctionState.isEventComplete = true;
+        io.emit('auction-event-complete', {
+          eventName: auctionState.eventName,
+          soldPlayers: auctionState.soldPlayers,
+          unsoldPlayers: auctionState.unsoldPlayers,
+          teams: auctionState.teams
+        });
+      }
     });
     
     socket.on('end-auction', async (result) => {
@@ -152,6 +189,16 @@ io.on('connection', (socket) => {
             if (result.sold && winningTeam) {
               player.finalPrice = auctionState.currentBid;
               player.soldTo = winningTeam;
+              
+              // Update team data
+              if (auctionState.teams[winningTeam]) {
+                auctionState.teams[winningTeam].purse -= auctionState.currentBid;
+                auctionState.teams[winningTeam].players.push({
+                  ...auctionState.currentPlayer,
+                  finalPrice: auctionState.currentBid,
+                  soldTo: winningTeam
+                });
+              }
             } else {
               player.finalPrice = null;
               player.soldTo = null;
@@ -171,11 +218,22 @@ io.on('connection', (socket) => {
               auctionState.unsoldPlayers.push(auctionState.currentPlayer);
             }
             
+            // Remove current player from remaining players
+            auctionState.remainingPlayers = auctionState.remainingPlayers.filter(p => p._id !== auctionState.currentPlayer._id);
+            
+            // Check if auction is complete
+            if (auctionState.remainingPlayers.length === 0) {
+              auctionState.isEventComplete = true;
+            }
+            
             io.emit('auction-ended', {
               player: auctionState.currentPlayer,
               result: { sold: result.sold && winningTeam, team: winningTeam },
               soldPlayers: auctionState.soldPlayers,
-              unsoldPlayers: auctionState.unsoldPlayers
+              unsoldPlayers: auctionState.unsoldPlayers,
+              remainingPlayers: auctionState.remainingPlayers,
+              isEventComplete: auctionState.isEventComplete,
+              teams: auctionState.teams
             });
             console.log('Server: Emitted auction-ended event.');
 
@@ -194,18 +252,32 @@ io.on('connection', (socket) => {
       auctionState.currentBid = 0;
       auctionState.bidders = [];
     });
+    
     // Admin sold/unsold quick actions
     socket.on('admin-result', (data) => {
       if (!auctionState.currentPlayer) return;
       const sold = !!data?.sold;
       const team = data?.team || 'AdminDecision';
       const result = sold ? { sold: true, team } : { sold: false };
+      
+      // Update team data if sold
+      if (sold && auctionState.teams[team]) {
+        auctionState.teams[team].purse -= auctionState.currentBid;
+        auctionState.teams[team].players.push({
+          ...auctionState.currentPlayer,
+          finalPrice: auctionState.currentBid,
+          soldTo: team
+        });
+      }
+      
       io.emit('auction-ended', {
         player: auctionState.currentPlayer,
         result,
         soldPlayers: auctionState.soldPlayers,
-        unsoldPlayers: auctionState.unsoldPlayers
+        unsoldPlayers: auctionState.unsoldPlayers,
+        teams: auctionState.teams
       });
+      
       auctionState.isActive = false;
       if (sold) {
         auctionState.soldPlayers.push({
@@ -220,6 +292,9 @@ io.on('connection', (socket) => {
       auctionState.currentPlayer = null;
       auctionState.currentBid = 0;
       auctionState.bidders = [];
+      
+      // Remove from remaining players
+      auctionState.remainingPlayers = auctionState.remainingPlayers.filter(p => p._id !== auctionState.currentPlayer._id);
     });
   }
   

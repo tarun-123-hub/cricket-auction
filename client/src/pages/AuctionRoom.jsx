@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Gavel,
@@ -14,20 +15,26 @@ import {
   Crown,
   CheckCircle,
   XCircle,
+  Play,
+  Pause,
 } from 'lucide-react';
-import { placeBid, endAuctionAction, setAuctionState, startAuction, newBid, updateTimer, auctionEnded } from '../store/slices/auctionSlice';
+import { placeBid, endAuctionAction, setAuctionState, startAuction, newBid, updateTimer, auctionEnded, startNextPlayerAction, completeAuctionEvent } from '../store/slices/auctionSlice';
 import { sendMessage } from '../store/slices/socketSlice';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ConfirmationModal from '../components/ConfirmationModal';
-import AuctionHammer from '../components/AuctionHammer';
+import EnhancedAuctionHammer from '../components/EnhancedAuctionHammer';
+import TeamPurseDisplay from '../components/TeamPurseDisplay';
+import PurchasedPlayersDisplay from '../components/PurchasedPlayersDisplay';
 import toast from 'react-hot-toast';
 
 const AuctionRoom = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth || {});
   const { socket, isConnected, messages } = useSelector((state) => state.socket || {});
   const {
     isActive,
+    isEventComplete,
     currentPlayer,
     currentBid,
     baseBid,
@@ -36,6 +43,9 @@ const AuctionRoom = () => {
     lastResult,
     teams,
     soldPlayers,
+    unsoldPlayers,
+    remainingPlayers,
+    auctionSummary,
   } = useSelector((state) => state.auction || {});
 
   const [bidAmount, setBidAmount] = useState('');
@@ -46,21 +56,29 @@ const AuctionRoom = () => {
   const [hammerResult, setHammerResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const [activeInfoIndex, setActiveInfoIndex] = useState(0);
-
   const messagesEndRef = useRef(null);
 
-  const bidders = Object.values(teams || {});
-  const purchasedPlayers = soldPlayers || [];
-
+  // Auto-scroll chat messages
   useEffect(() => {
-    if (bidders.length > 0) {
-      const interval = setInterval(() => {
-        setActiveInfoIndex((prevIndex) => (prevIndex + 1) % bidders.length);
-      }, 7000);
-      return () => clearInterval(interval);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Handle auction completion and redirection
+  useEffect(() => {
+    if (isEventComplete && auctionSummary) {
+      const timer = setTimeout(() => {
+        if (user?.role === 'admin') {
+          navigate('/auction-summary');
+        } else if (user?.role === 'bidder') {
+          navigate('/bidder-thank-you');
+        } else {
+          navigate('/auction-summary');
+        }
+      }, 3000);
+      
+      return () => clearTimeout(timer);
     }
-  }, [bidders.length]);
+  }, [isEventComplete, auctionSummary, user?.role, navigate]);
 
   useEffect(() => {
     if (!socket) return;
@@ -116,8 +134,19 @@ const AuctionRoom = () => {
     if (lastResult) {
       setHammerResult(lastResult.sold ? 'sold' : 'unsold');
       setShowHammer(true);
+      
+      // Auto-start next player after hammer animation
+      const nextPlayerTimer = setTimeout(() => {
+        if (remainingPlayers.length > 0) {
+          dispatch(startNextPlayerAction());
+        } else {
+          dispatch(completeAuctionEvent());
+        }
+      }, 4000); // Wait for hammer animation to complete
+      
+      return () => clearTimeout(nextPlayerTimer);
     }
-  }, [lastResult]);
+  }, [lastResult, remainingPlayers.length, dispatch]);
 
   useEffect(() => {
     if (currentBid > 0) {
@@ -145,7 +174,14 @@ const AuctionRoom = () => {
     
     setIsProcessing(true);
     try {
-      dispatch(endAuctionAction({ sold: confirmAction.sold }));
+      const winningTeam = confirmAction.sold && bidHistory.length > 0 
+        ? bidHistory[bidHistory.length - 1].team 
+        : null;
+      
+      dispatch(endAuctionAction({ 
+        sold: confirmAction.sold,
+        team: winningTeam
+      }));
       setShowConfirmModal(false);
       setConfirmAction(null);
     } catch (error) {
@@ -158,6 +194,10 @@ const AuctionRoom = () => {
   const handleHammerComplete = () => {
     setShowHammer(false);
     setHammerResult(null);
+  };
+
+  const handleEndAuctionEvent = () => {
+    dispatch(completeAuctionEvent());
   };
 
   const handleSendMessage = (e) => {
@@ -176,6 +216,29 @@ const AuctionRoom = () => {
       maximumFractionDigits: 0,
     }).format(amount);
 
+  // Show completion message if auction is complete
+  if (isEventComplete) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900/20 to-purple-900/20 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center bg-gray-800/90 backdrop-blur-xl rounded-2xl p-12 border border-blue-500/30"
+        >
+          <Trophy className="h-24 w-24 text-yellow-500 mx-auto mb-6" />
+          <h1 className="text-4xl font-bold text-white mb-4">Auction Complete!</h1>
+          <p className="text-xl text-gray-300 mb-6">
+            All players have been auctioned. Redirecting to summary...
+          </p>
+          <div className="flex items-center justify-center space-x-4 text-lg text-blue-400">
+            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span>Preparing summary...</span>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   if (!isConnected) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">
@@ -185,32 +248,13 @@ const AuctionRoom = () => {
     );
   }
 
-  const activeBidder = bidders.length > 0 ? bidders[activeInfoIndex] : null;
-  const purchasedPlayersByTeam = activeBidder ? purchasedPlayers.filter(p => p.soldTo === activeBidder.name) : [];
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900/20 to-purple-900/20 text-white p-6 lg:p-8 font-sans">
       <div className="grid grid-cols-12 gap-6 h-full">
         {/* Left Column */}
         <div className="col-span-12 lg:col-span-3 space-y-6">
-          <InfoCard title="Available Purse">
-            <AnimatePresence mode="wait">
-              {activeBidder && (
-                <motion.div
-                  key={activeBidder.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.5 }}
-                  className="space-y-2"
-                >
-                  <h3 className="text-3xl font-bold text-blue-400">{activeBidder.name}</h3>
-                  <p className="text-5xl font-bold text-neon-green">{formatCurrency(activeBidder.purse)}</p>
-                  <p className="text-xl text-gray-300">Players Purchased: {activeBidder.players.length}</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </InfoCard>
+          <TeamPurseDisplay teams={teams} isActive={isActive} />
+          
           <InfoCard title="Bidding History">
             <div className="h-96 overflow-y-auto space-y-3 pr-2">
               {bidHistory.slice().reverse().map((bid, index) => (
@@ -241,19 +285,31 @@ const AuctionRoom = () => {
                   alt={currentPlayer.name}
                   className="max-h-full max-w-full object-contain rounded-xl shadow-2xl"
                 />
-                <AuctionHammer 
+                <EnhancedAuctionHammer 
                   isVisible={showHammer}
                   result={hammerResult}
+                  playerImage={currentPlayer.image}
+                  playerName={currentPlayer.name}
+                  finalPrice={currentBid}
+                  soldTo={bidHistory.length > 0 ? bidHistory[bidHistory.length - 1].team : null}
                   onAnimationComplete={handleHammerComplete}
                 />
               </>
             ) : (
               <div className="text-center text-gray-500">
                 <Gavel size={80} className="mx-auto mb-6 text-gray-600" />
-                <h2 className="text-3xl font-semibold">Waiting for next auction...</h2>
+                <h2 className="text-3xl font-semibold">
+                  {remainingPlayers.length > 0 ? 'Waiting for next auction...' : 'Auction Complete!'}
+                </h2>
+                {remainingPlayers.length > 0 && (
+                  <p className="text-lg text-gray-400 mt-4">
+                    {remainingPlayers.length} players remaining
+                  </p>
+                )}
               </div>
             )}
           </div>
+          
           {isActive && currentPlayer && (
             <PlayerInfoCard
               player={currentPlayer}
@@ -267,35 +323,34 @@ const AuctionRoom = () => {
               userRole={user?.role}
             />
           )}
+          
           {isActive && currentPlayer && user?.role === 'admin' && (
             <AdminControls onAdminDecision={handleAdminDecision} isActive={isActive} />
+          )}
+          
+          {/* End Auction Event Button (Admin Only) */}
+          {user?.role === 'admin' && !isActive && remainingPlayers.length === 0 && soldPlayers.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/50 shadow-xl text-center"
+            >
+              <h3 className="text-2xl font-bold text-purple-400 mb-4">Auction Event Complete</h3>
+              <p className="text-gray-300 mb-6">All players have been auctioned. Click below to view the summary.</p>
+              <button
+                onClick={handleEndAuctionEvent}
+                className="btn-primary text-xl px-8 py-4"
+              >
+                View Auction Summary
+              </button>
+            </motion.div>
           )}
         </div>
 
         {/* Right Column */}
         <div className="col-span-12 lg:col-span-3 space-y-6">
-          <InfoCard title="Purchased Players">
-            <AnimatePresence mode="wait">
-              {activeBidder && (
-                <motion.div
-                  key={activeBidder.id}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.5 }}
-                  className="h-64 overflow-y-auto space-y-3 pr-2"
-                >
-                  <h3 className="text-2xl font-bold text-blue-400 mb-3">{activeBidder.name}</h3>
-                  {purchasedPlayersByTeam.map((player) => (
-                    <div key={player.id} className="flex justify-between items-center bg-gray-800/70 backdrop-blur-sm p-3 rounded-lg border border-gray-700/50">
-                      <p className="font-semibold text-lg">{player.name}</p>
-                      <p className="text-base text-neon-green font-bold">{formatCurrency(player.finalPrice)}</p>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </InfoCard>
+          <PurchasedPlayersDisplay teams={teams} isActive={isActive} />
+          
           <InfoCard title="Live Chat">
             <div className="flex flex-col h-96">
               <div className="flex-grow overflow-y-auto mb-3 space-y-3 pr-2">

@@ -6,6 +6,7 @@ const auctionSlice = createSlice({
   initialState: {
     isActive: false,
     isEventLive: false,
+    isEventComplete: false,
     currentPlayer: null,
     currentBid: 0,
     baseBid: 0,
@@ -13,13 +14,21 @@ const auctionSlice = createSlice({
     eventDescription: '',
     maxPlayers: 0,
     eventPlayers: [],
+    remainingPlayers: [],
+    currentPlayerIndex: 0,
     bidders: [],
     timer: 30,
     soldPlayers: [],
     unsoldPlayers: [],
-    teams: {},
+    teams: {
+      'Team A': { name: 'Team A', purse: 10000000, players: [] },
+      'Team B': { name: 'Team B', purse: 10000000, players: [] },
+      'Team C': { name: 'Team C', purse: 10000000, players: [] },
+      'Team D': { name: 'Team D', purse: 10000000, players: [] }
+    },
     lastResult: null,
     bidHistory: [],
+    auctionSummary: null,
   },
   reducers: {
     setAuctionState: (state, action) => {
@@ -30,7 +39,17 @@ const auctionSlice = createSlice({
       state.eventDescription = action.payload.eventDescription || ''
       state.maxPlayers = Number(action.payload.maxPlayers) || 0
       state.eventPlayers = action.payload.eventPlayers || []
+      state.remainingPlayers = [...(action.payload.eventPlayers || [])]
+      state.currentPlayerIndex = 0
       state.isEventLive = false
+      state.isEventComplete = false
+      state.soldPlayers = []
+      state.unsoldPlayers = []
+      // Reset team purses and players
+      Object.keys(state.teams).forEach(teamName => {
+        state.teams[teamName].purse = 10000000
+        state.teams[teamName].players = []
+      })
     },
     activateEvent: (state) => {
       state.isEventLive = true
@@ -49,20 +68,63 @@ const auctionSlice = createSlice({
       state.timer = 30
       state.lastResult = null
     },
+    startNextPlayer: (state) => {
+      if (state.remainingPlayers.length > 0) {
+        const nextPlayer = state.remainingPlayers[0]
+        state.isActive = true
+        state.currentPlayer = nextPlayer
+        state.currentBid = nextPlayer.basePrice
+        state.baseBid = nextPlayer.basePrice
+        state.bidders = []
+        state.timer = 30
+        state.lastResult = null
+        state.currentPlayerIndex++
+      } else {
+        state.isEventComplete = true
+        state.isActive = false
+        state.currentPlayer = null
+      }
+    },
     auctionEnded: (state, action) => {
       console.log('auctionEnded reducer: Received auction-ended event with payload:', action.payload);
       state.isActive = false;
       state.lastResult = action.payload.result;
 
-      if (action.payload.result.sold) {
-        state.soldPlayers.push({
+      if (action.payload.result.sold && action.payload.result.team) {
+        const soldPlayer = {
           ...state.currentPlayer,
           finalPrice: state.currentBid,
           soldTo: action.payload.result.team,
           soldAt: new Date().toISOString(),
-        });
+        }
+        state.soldPlayers.push(soldPlayer);
+        
+        // Update team purse and add player
+        if (state.teams[action.payload.result.team]) {
+          state.teams[action.payload.result.team].purse -= state.currentBid
+          state.teams[action.payload.result.team].players.push(soldPlayer)
+        }
       } else {
-        state.unsoldPlayers.push(state.currentPlayer);
+        state.unsoldPlayers.push({
+          ...state.currentPlayer,
+          unsoldAt: new Date().toISOString()
+        });
+      }
+
+      // Remove current player from remaining players
+      state.remainingPlayers = state.remainingPlayers.filter(p => p._id !== state.currentPlayer._id)
+
+      // Check if auction is complete
+      if (state.remainingPlayers.length === 0) {
+        state.isEventComplete = true
+        state.auctionSummary = {
+          eventName: state.eventName,
+          totalPlayers: state.eventPlayers.length,
+          soldPlayers: state.soldPlayers,
+          unsoldPlayers: state.unsoldPlayers,
+          teams: state.teams,
+          completedAt: new Date().toISOString()
+        }
       }
 
       // Clear current auction data
@@ -103,6 +165,7 @@ const auctionSlice = createSlice({
     },
     resetAuction: (state) => {
       state.isActive = false
+      state.isEventComplete = false
       state.currentPlayer = null
       state.currentBid = 0
       state.baseBid = 0
@@ -110,9 +173,16 @@ const auctionSlice = createSlice({
       state.timer = 30
       state.soldPlayers = []
       state.unsoldPlayers = []
-      state.teams = {}
+      state.remainingPlayers = []
+      state.currentPlayerIndex = 0
       state.lastResult = null
       state.bidHistory = []
+      state.auctionSummary = null
+      // Reset teams
+      Object.keys(state.teams).forEach(teamName => {
+        state.teams[teamName].purse = 10000000
+        state.teams[teamName].players = []
+      })
     },
     updateSoldPlayers: (state, action) => {
       state.soldPlayers = action.payload
@@ -120,6 +190,18 @@ const auctionSlice = createSlice({
     updateUnsoldPlayers: (state, action) => {
       state.unsoldPlayers = action.payload
     },
+    completeAuctionEvent: (state) => {
+      state.isEventComplete = true
+      state.isActive = false
+      state.auctionSummary = {
+        eventName: state.eventName,
+        totalPlayers: state.eventPlayers.length,
+        soldPlayers: state.soldPlayers,
+        unsoldPlayers: state.unsoldPlayers,
+        teams: state.teams,
+        completedAt: new Date().toISOString()
+      }
+    }
   },
 })
 
@@ -129,6 +211,7 @@ export const {
   activateEvent,
   deactivateEvent,
   startAuction,
+  startNextPlayer,
   auctionEnded,
   newBid,
   updateTimer,
@@ -136,6 +219,7 @@ export const {
   resetAuction,
   updateSoldPlayers,
   updateUnsoldPlayers,
+  completeAuctionEvent,
 } = auctionSlice.actions
 
 // Thunk for placing a bid
@@ -157,7 +241,7 @@ export const placeBid = (amount) => (dispatch, getState) => {
   }
   
   if (isDemo || !socket) {
-    dispatch(newBid({ amount, bidder: user?.username || 'Bidder', team: 'Demo', timer: 30 }))
+    dispatch(newBid({ amount, bidder: user?.username || 'Bidder', team: 'Team A', timer: 30 }))
     toast.success('Bid placed')
     return
   }
@@ -188,12 +272,31 @@ export const endAuctionAction = (result) => (dispatch, getState) => {
   
   if (!socket || !socket.connected) {
     toast.error('Not connected to auction room')
-    console.log('endAuctionAction: Socket not connected or not available.'); // Added log
+    console.log('endAuctionAction: Socket not connected or not available.');
     return
   }
   
-  console.log('endAuctionAction: Emitting end-auction with result:', result); // Modified log
+  console.log('endAuctionAction: Emitting end-auction with result:', result);
   socket.emit('end-auction', result)
+}
+
+// Thunk for starting next player auction
+export const startNextPlayerAction = () => (dispatch, getState) => {
+  const { socket } = getState().socket
+  const { remainingPlayers } = getState().auction
+  
+  if (remainingPlayers.length === 0) {
+    dispatch(completeAuctionEvent())
+    return
+  }
+  
+  if (!socket || !socket.connected) {
+    // Demo mode - start next player locally
+    dispatch(startNextPlayer())
+    return
+  }
+  
+  socket.emit('start-next-player')
 }
 
 export default auctionSlice.reducer
