@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { 
   Gavel, 
   Users, 
@@ -11,10 +12,13 @@ import {
   Clock,
   DollarSign,
   TrendingUp,
-  Activity
+  Activity,
+  UserPlus,
+  CheckCircle
 } from 'lucide-react'
 import axios from '../api/axios'
 import LoadingSpinner from '../components/LoadingSpinner'
+import BidderRegistrationModal from '../components/BidderRegistrationModal'
 
 const Dashboard = () => {
   const { user } = useSelector((state) => state.auth)
@@ -22,15 +26,19 @@ const Dashboard = () => {
   const { isActive, currentPlayer, soldPlayers, unsoldPlayers } = useSelector((state) => state.auction)
   
   const [stats, setStats] = useState(null)
+  const [liveEvent, setLiveEvent] = useState(null)
+  const [showRegistrationModal, setShowRegistrationModal] = useState(false)
+  const [userRegistration, setUserRegistration] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchStats()
+    fetchLiveEvent()
   }, [])
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get('/api/auction/stats')
+      const response = await axios.get('/api/auction-event/stats')
       setStats(response.data)
     } catch (error) {
       console.error('Error fetching stats:', error)
@@ -39,6 +47,27 @@ const Dashboard = () => {
     }
   }
 
+  const fetchLiveEvent = async () => {
+    try {
+      const response = await axios.get('/api/auction-event/live')
+      setLiveEvent(response.data)
+      
+      // Check if current user is registered
+      if (response.data && user) {
+        const registration = response.data.registeredBidders.find(
+          bidder => bidder.userId._id === user.id || bidder.userId === user.id
+        )
+        setUserRegistration(registration)
+      }
+    } catch (error) {
+      console.error('Error fetching live event:', error)
+    }
+  }
+
+  const handleRegistrationSuccess = () => {
+    setShowRegistrationModal(false)
+    fetchLiveEvent()
+  }
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -64,7 +93,7 @@ const Dashboard = () => {
       icon: Gavel,
       link: '/auction',
       color: 'bg-gradient-to-r from-blue-600 to-purple-600',
-      available: true
+      available: user?.role === 'admin' || user?.role === 'spectator' || (user?.role === 'bidder' && userRegistration && userRegistration.purse > 0)
     },
     {
       title: 'View Statistics',
@@ -127,6 +156,85 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Live Event Status */}
+        {liveEvent && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-xl shadow-xl border border-blue-500/30">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-2 flex items-center">
+                    <Play className="h-5 w-5 mr-2" />
+                    Live Auction Event
+                  </h3>
+                  <p className="text-blue-100 text-base mb-1">{liveEvent.eventName}</p>
+                  <p className="text-blue-200 text-sm">
+                    {liveEvent.registeredBidders.length}/{liveEvent.maxBidders} bidders registered
+                  </p>
+                </div>
+                <div className="text-right">
+                  {user?.role === 'bidder' && !userRegistration && (
+                    <button
+                      onClick={() => setShowRegistrationModal(true)}
+                      className="bg-white text-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-base shadow-lg flex items-center space-x-2"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      <span>Register for Auction</span>
+                    </button>
+                  )}
+                  {user?.role === 'bidder' && userRegistration && (
+                    <div className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold text-base shadow-lg flex items-center space-x-2">
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Registered as {userRegistration.teamName}</span>
+                    </div>
+                  )}
+                  {user?.role === 'admin' && (
+                    <Link
+                      to="/admin"
+                      className="bg-white text-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-base shadow-lg"
+                    >
+                      Manage Event
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Bidder Registration Status */}
+        {user?.role === 'bidder' && userRegistration && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <div className="bg-gradient-to-r from-green-600 to-teal-600 p-6 rounded-xl shadow-xl border border-green-500/30">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-2">Registration Successful! 🎉</h3>
+                  <p className="text-green-100 text-base mb-1">Team Name: {userRegistration.teamName}</p>
+                  <p className="text-green-100 text-base mb-1">Owner: {userRegistration.ownerName}</p>
+                  {userRegistration.purse > 0 ? (
+                    <p className="text-green-100 text-base">Purse: {formatCurrency(userRegistration.purse)}</p>
+                  ) : (
+                    <p className="text-yellow-200 text-base">Waiting for admin to allocate purse...</p>
+                  )}
+                </div>
+                {userRegistration.teamImage && (
+                  <img
+                    src={userRegistration.teamImage}
+                    alt={userRegistration.teamName}
+                    className="w-16 h-16 rounded-full object-cover border-2 border-white/30"
+                  />
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
         {/* Connection Status */}
         <div className="mb-8">
           <div className={`p-6 rounded-xl border ${
@@ -307,6 +415,14 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Bidder Registration Modal */}
+      <BidderRegistrationModal
+        isOpen={showRegistrationModal}
+        onClose={() => setShowRegistrationModal(false)}
+        onSuccess={handleRegistrationSuccess}
+        liveEvent={liveEvent}
+      />
     </div>
   )
 }

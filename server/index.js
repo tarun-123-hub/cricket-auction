@@ -10,9 +10,11 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const playerRoutes = require('./routes/players');
 const auctionRoutes = require('./routes/auction');
+const auctionEventRoutes = require('./routes/auctionEvent');
 const { connectDB } = require('./config/database');
 const { authenticateSocket } = require('./middleware/auth');
 const Player = require('./models/Player');
+const AuctionEvent = require('./models/AuctionEvent');
 
 const app = express();
 const server = http.createServer(app);
@@ -69,31 +71,98 @@ connectDB();
 app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/auction', auctionRoutes);
+app.use('/api/auction-event', auctionEventRoutes);
 
 // Global auction state
-let auctionState = {
-  isActive: false,
-  isEventLive: false,
-  eventName: '',
-  eventDescription: '',
-  maxPlayers: 0,
-  eventPlayers: [],
-  currentPlayer: null,
-  currentBid: 0,
-  baseBid: 0,
-  bidders: [],
-  timer: 60,
-  soldPlayers: [],
-  unsoldPlayers: [],
-  teams: {
-    'Team A': { name: 'Team A', purse: 10000000, players: [] },
-    'Team B': { name: 'Team B', purse: 10000000, players: [] },
-    'Team C': { name: 'Team C', purse: 10000000, players: [] },
-    'Team D': { name: 'Team D', purse: 10000000, players: [] }
-  },
-  remainingPlayers: [],
-  currentPlayerIndex: 0,
-  isEventComplete: false
+let auctionState = {};
+
+// Initialize auction state from database
+const initializeAuctionState = async () => {
+  try {
+    const liveEvent = await AuctionEvent.findOne({ isLive: true })
+      .populate('eventPlayers')
+      .populate('registeredBidders.userId', 'username email');
+    
+    if (liveEvent) {
+      // Get sold and unsold players
+      const soldPlayers = await Player.find({
+        _id: { $in: liveEvent.eventPlayers },
+        auctionStatus: 'sold'
+      });
+      
+      const unsoldPlayers = await Player.find({
+        _id: { $in: liveEvent.eventPlayers },
+        auctionStatus: 'unsold'
+      });
+      
+      const remainingPlayers = await Player.find({
+        _id: { $in: liveEvent.eventPlayers },
+        auctionStatus: 'pending'
+      });
+      
+      // Build teams object from registered bidders
+      const teams = {};
+      liveEvent.registeredBidders.forEach(bidder => {
+        const teamPlayers = soldPlayers.filter(p => p.soldTo === bidder.teamName);
+        const totalSpent = teamPlayers.reduce((sum, p) => sum + (p.finalPrice || 0), 0);
+        
+        teams[bidder.teamName] = {
+          name: bidder.teamName,
+          ownerName: bidder.ownerName,
+          teamImage: bidder.teamImage,
+          purse: bidder.purse - totalSpent,
+          originalPurse: bidder.purse,
+          players: teamPlayers
+        };
+      });
+      
+      auctionState = {
+        isActive: liveEvent.isActive,
+        isEventLive: liveEvent.isLive,
+        isEventComplete: liveEvent.isComplete,
+        eventName: liveEvent.eventName,
+        eventDescription: liveEvent.eventDescription,
+        maxPlayers: liveEvent.maxPlayers,
+        maxBidders: liveEvent.maxBidders,
+        eventPlayers: liveEvent.eventPlayers,
+        registeredBidders: liveEvent.registeredBidders,
+        currentPlayer: liveEvent.currentPlayer,
+        currentBid: liveEvent.currentBid,
+        baseBid: 0,
+        bidders: [],
+        timer: liveEvent.timer,
+        soldPlayers,
+        unsoldPlayers,
+        remainingPlayers,
+        teams,
+        currentPlayerIndex: 0
+      };
+    } else {
+      auctionState = {
+        isActive: false,
+        isEventLive: false,
+        isEventComplete: false,
+        eventName: '',
+        eventDescription: '',
+        maxPlayers: 0,
+        maxBidders: 8,
+        eventPlayers: [],
+        registeredBidders: [],
+        currentPlayer: null,
+        currentBid: 0,
+        baseBid: 0,
+        bidders: [],
+        timer: 60,
+        soldPlayers: [],
+        unsoldPlayers: [],
+        remainingPlayers: [],
+        teams: {},
+        currentPlayerIndex: 0
+      };
+    }
+  } catch (error) {
+    console.error('Error initializing auction state:', error);
+  }
 };
 
 // Socket.IO connection handling
@@ -114,57 +183,93 @@ io.on('connection', (socket) => {
   // Send current auction state to newly connected user
   socket.emit('auction-state', auctionState);
   
+  // Handle bidder registration updates
+  socket.on('bidder-registered', async () => {
+    await initializeAuctionState();
+    io.emit('auction-state', auctionState);
+  });
+  
+  // Handle purse updates
+  socket.on('purse-updated', async () => {
+    await initializeAuctionState();
+    io.emit('auction-state', auctionState);
+  });
+  
   // Admin controls
   if (socket.user.role === 'admin') {
-    socket.on('activate-event', (payload) => {
-      auctionState.isEventLive = true;
-      auctionState.eventName = payload.eventName || auctionState.eventName;
-      auctionState.eventDescription = payload.eventDescription || '';
-      auctionState.maxPlayers = Number(payload.maxPlayers || 0);
-      auctionState.eventPlayers = Array.isArray(payload.eventPlayers) ? payload.eventPlayers : [];
-      io.emit('event-activated', {
-        eventName: auctionState.eventName,
-        maxPlayers: auctionState.maxPlayers
-      });
-    });
-    socket.on('start-auction', (playerData) => {
-      auctionState.isActive = true;
-      auctionState.currentPlayer = playerData;
-      auctionState.currentBid = playerData.basePrice;
-      auctionState.baseBid = playerData.basePrice;
-      auctionState.bidders = [];
-      auctionState.timer = 60;
-      
-      // Set remaining players if not already set
-      if (auctionState.remainingPlayers.length === 0 && auctionState.eventPlayers.length > 0) {
-        auctionState.remainingPlayers = [...auctionState.eventPlayers];
-      }
-      
-      io.emit('auction-started', auctionState);
-      startTimer();
+    socket.on('activate-event', async (payload) => {
+      await initializeAuctionState();
+      io.emit('auction-state', auctionState);
     });
     
-    socket.on('start-next-player', () => {
-      if (auctionState.remainingPlayers.length > 0) {
-        const nextPlayer = auctionState.remainingPlayers[0];
-        auctionState.isActive = true;
-        auctionState.currentPlayer = nextPlayer;
-        auctionState.currentBid = nextPlayer.basePrice;
-        auctionState.baseBid = nextPlayer.basePrice;
-        auctionState.bidders = [];
-        auctionState.timer = 60;
-        auctionState.currentPlayerIndex++;
+    socket.on('start-auction', async (playerData) => {
+      try {
+        const liveEvent = await AuctionEvent.findOne({ isLive: true });
+        if (liveEvent) {
+          liveEvent.isActive = true;
+          liveEvent.currentPlayer = playerData._id;
+          liveEvent.currentBid = playerData.basePrice;
+          liveEvent.timer = 60;
+          await liveEvent.save();
+          
+          auctionState.isActive = true;
+          auctionState.currentPlayer = playerData;
+          auctionState.currentBid = playerData.basePrice;
+          auctionState.baseBid = playerData.basePrice;
+          auctionState.bidders = [];
+          auctionState.timer = 60;
+          
+          io.emit('auction-started', auctionState);
+          startTimer();
+        }
+      } catch (error) {
+        console.error('Error starting auction:', error);
+      }
+    });
+    
+    socket.on('start-next-player', async () => {
+      try {
+        await initializeAuctionState();
         
-        io.emit('auction-started', auctionState);
-        startTimer();
-      } else {
-        auctionState.isEventComplete = true;
-        io.emit('auction-event-complete', {
-          eventName: auctionState.eventName,
-          soldPlayers: auctionState.soldPlayers,
-          unsoldPlayers: auctionState.unsoldPlayers,
-          teams: auctionState.teams
-        });
+        if (auctionState.remainingPlayers.length > 0) {
+          const nextPlayer = auctionState.remainingPlayers[0];
+          
+          const liveEvent = await AuctionEvent.findOne({ isLive: true });
+          if (liveEvent) {
+            liveEvent.currentPlayer = nextPlayer._id;
+            liveEvent.currentBid = nextPlayer.basePrice;
+            liveEvent.timer = 60;
+            await liveEvent.save();
+          }
+          
+          auctionState.isActive = true;
+          auctionState.currentPlayer = nextPlayer;
+          auctionState.currentBid = nextPlayer.basePrice;
+          auctionState.baseBid = nextPlayer.basePrice;
+          auctionState.bidders = [];
+          auctionState.timer = 60;
+          auctionState.currentPlayerIndex++;
+          
+          io.emit('auction-started', auctionState);
+          startTimer();
+        } else {
+          const liveEvent = await AuctionEvent.findOne({ isLive: true });
+          if (liveEvent) {
+            liveEvent.isComplete = true;
+            liveEvent.isActive = false;
+            await liveEvent.save();
+          }
+          
+          auctionState.isEventComplete = true;
+          io.emit('auction-event-complete', {
+            eventName: auctionState.eventName,
+            soldPlayers: auctionState.soldPlayers,
+            unsoldPlayers: auctionState.unsoldPlayers,
+            teams: auctionState.teams
+          });
+        }
+      } catch (error) {
+        console.error('Error starting next player:', error);
       }
     });
     
@@ -190,8 +295,8 @@ io.on('connection', (socket) => {
               player.finalPrice = auctionState.currentBid;
               player.soldTo = winningTeam;
               
-              // Update team data
-              if (auctionState.teams[winningTeam]) {
+              // Update team data in auction state
+              if (auctionState.teams && auctionState.teams[winningTeam]) {
                 auctionState.teams[winningTeam].purse -= auctionState.currentBid;
                 auctionState.teams[winningTeam].players.push({
                   ...auctionState.currentPlayer,
@@ -205,6 +310,12 @@ io.on('connection', (socket) => {
             }
             await player.save();
             console.log('Server: Player status updated and saved to DB:', player.name, player.auctionStatus);
+            
+            // Update live event
+            const liveEvent = await AuctionEvent.findOne({ isLive: true });
+            if (liveEvent) {
+              await liveEvent.save();
+            }
 
             // Update in-memory state after successful DB save
             if (result.sold && winningTeam) {
@@ -220,6 +331,9 @@ io.on('connection', (socket) => {
             
             // Remove current player from remaining players
             auctionState.remainingPlayers = auctionState.remainingPlayers.filter(p => p._id !== auctionState.currentPlayer._id);
+            
+            // Refresh auction state from database
+            await initializeAuctionState();
             
             // Check if auction is complete
             if (auctionState.remainingPlayers.length === 0) {
@@ -299,7 +413,7 @@ io.on('connection', (socket) => {
   }
   
   // Bidding functionality
-  if (socket.user.role === 'bidder') {
+  if (socket.user.role === 'bidder' || socket.user.role === 'admin') {
     socket.on('place-bid', (bidData) => {
       if (!auctionState.isActive || !auctionState.currentPlayer) {
         socket.emit('bid-error', 'No active auction');
@@ -312,10 +426,14 @@ io.on('connection', (socket) => {
         return;
       }
       
+      // Find the bidder's team name
+      const bidderTeam = auctionState.registeredBidders.find(b => b.userId.toString() === socket.user.id);
+      const teamName = bidderTeam ? bidderTeam.teamName : socket.user.team || 'Unknown Team';
+      
       auctionState.currentBid = newBid;
       auctionState.bidders.push({
         user: socket.user.username,
-        team: socket.user.team,
+        team: teamName,
         amount: newBid,
         timestamp: new Date()
       });
@@ -325,7 +443,7 @@ io.on('connection', (socket) => {
       
       io.emit('new-bid', {
         bidder: socket.user.username,
-        team: socket.user.team,
+        team: teamName,
         amount: newBid,
         currentBid: auctionState.currentBid,
         timer: auctionState.timer
@@ -390,6 +508,11 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
+// Initialize auction state on server start
+connectDB().then(() => {
+  initializeAuctionState();
+});
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
