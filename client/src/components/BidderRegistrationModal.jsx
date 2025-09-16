@@ -121,16 +121,28 @@ const BidderRegistrationModal = ({ isOpen, onClose, onSuccess, liveEvent }) => {
 
             {/* Event Info */}
             {liveEvent && (
-              <div className="bg-blue-900/30 rounded-lg p-4 mb-6 border border-blue-500/20">
-                <h3 className="text-blue-300 font-semibold text-base mb-1">{liveEvent.eventName}</h3>
+              <div className="bg-green-900/30 rounded-lg p-4 mb-6 border border-green-500/20">
+                <h3 className="text-green-300 font-semibold text-base mb-1">{liveEvent.eventName}</h3>
                 <p className="text-gray-300 text-sm">
                   {liveEvent.registeredBidders.length}/{liveEvent.maxBidders} spots filled
                 </p>
+                {liveEvent.registeredBidders.length >= liveEvent.maxBidders && (
+                  <p className="text-red-300 text-sm mt-2 font-semibold">
+                    ⚠️ Registration Full - No more spots available
+                  </p>
+                )}
               </div>
             )}
 
             {/* Registration Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
+              {liveEvent && liveEvent.registeredBidders.length >= liveEvent.maxBidders ? (
+                <div className="text-center py-8">
+                  <p className="text-red-400 text-lg font-semibold mb-2">Registration Closed</p>
+                  <p className="text-gray-400">This event has reached maximum capacity.</p>
+                </div>
+              ) : (
+                <>
               {/* Team Name */}
               <div>
                 <label htmlFor="teamName" className="block text-sm font-medium text-gray-300 mb-2">
@@ -227,6 +239,8 @@ const BidderRegistrationModal = ({ isOpen, onClose, onSuccess, liveEvent }) => {
                   </>
                 )}
               </button>
+                </>
+              )}
             </form>
 
             {/* Footer */}

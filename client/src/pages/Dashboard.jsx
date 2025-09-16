@@ -163,15 +163,15 @@ const Dashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="mb-6"
           >
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-xl shadow-xl border border-blue-500/30">
+            <div className="bg-gradient-to-r from-green-600 to-blue-600 p-6 rounded-xl shadow-xl border border-green-500/30">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-white mb-2 flex items-center">
                     <Play className="h-5 w-5 mr-2" />
                     Live Auction Event
                   </h3>
-                  <p className="text-blue-100 text-sm mb-1">{liveEvent.eventName}</p>
-                  <p className="text-blue-200 text-sm">
+                  <p className="text-green-100 text-sm mb-1">{liveEvent.eventName}</p>
+                  <p className="text-green-200 text-sm">
                     {liveEvent.registeredBidders.length}/{liveEvent.maxBidders} bidders registered
                   </p>
                 </div>
@@ -179,14 +179,14 @@ const Dashboard = () => {
                   {user?.role === 'bidder' && !userRegistration && (
                     <button
                       onClick={() => setShowRegistrationModal(true)}
-                      className="bg-white text-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg flex items-center space-x-2"
+                      className="bg-white text-green-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg flex items-center space-x-2"
                     >
                       <UserPlus className="h-4 w-4" />
                       <span>Register for Auction</span>
                     </button>
                   )}
                   {user?.role === 'bidder' && userRegistration && (
-                    <div className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
+                    <div className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
                       <CheckCircle className="h-4 w-4" />
                       <span>Registered as {userRegistration.teamName}</span>
                     </div>
@@ -194,7 +194,7 @@ const Dashboard = () => {
                   {user?.role === 'admin' && (
                     <Link
                       to="/admin"
-                      className="bg-white text-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg"
+                      className="bg-white text-green-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg"
                     >
                       Manage Event
                     </Link>
@@ -212,14 +212,14 @@ const Dashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             className="mb-6"
           >
-            <div className="bg-gradient-to-r from-green-600 to-teal-600 p-6 rounded-xl shadow-xl border border-green-500/30">
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-xl shadow-xl border border-blue-500/30">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-white mb-2">Registration Successful! 🎉</h3>
-                  <p className="text-green-100 text-sm mb-1">Team Name: {userRegistration.teamName}</p>
-                  <p className="text-green-100 text-sm mb-1">Owner: {userRegistration.ownerName}</p>
+                  <p className="text-blue-100 text-sm mb-1">Team Name: {userRegistration.teamName}</p>
+                  <p className="text-blue-100 text-sm mb-1">Owner: {userRegistration.ownerName}</p>
                   {userRegistration.purse > 0 ? (
-                    <p className="text-green-100 text-sm">Purse: {formatCurrency(userRegistration.purse)}</p>
+                    <p className="text-blue-100 text-sm">Purse: {formatCurrency(userRegistration.purse)}</p>
                   ) : (
                     <p className="text-yellow-200 text-sm">Waiting for admin to allocate purse...</p>
                   )}
@@ -343,7 +343,11 @@ const Dashboard = () => {
                   to={action.link}
                   className="group block"
                 >
-                  <div className={`${action.color} p-6 rounded-xl shadow-xl transform transition-all duration-300 group-hover:scale-105 group-hover:shadow-2xl border border-white/10`}>
+                  <motion.div 
+                    whileHover={{ scale: 1.05, y: -5 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={`${action.color} p-6 rounded-xl shadow-xl transition-all duration-300 border border-white/10`}
+                  >
                     <Icon className="h-10 w-10 text-white mb-4" />
                     <h3 className="text-lg font-bold text-white mb-2">
                       {action.title}
@@ -351,7 +355,7 @@ const Dashboard = () => {
                     <p className="text-white/80 text-sm">
                       {action.description}
                     </p>
-                  </div>
+                  </motion.div>
                 </Link>
               )
             })}
