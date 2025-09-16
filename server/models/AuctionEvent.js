@@ -10,6 +10,15 @@ const auctionEventSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  startTime: {
+    type: Date,
+    default: null
+  },
+  status: {
+    type: String,
+    enum: ['draft', 'active', 'paused', 'ended'],
+    default: 'draft'
+  },
   maxPlayers: {
     type: Number,
     default: 0
@@ -19,6 +28,22 @@ const auctionEventSchema = new mongoose.Schema({
     default: 8,
     min: 2,
     max: 16
+  },
+  teamPurseDefault: {
+    type: Number,
+    default: 10000000
+  },
+  timerSeconds: {
+    type: Number,
+    default: 60
+  },
+  incrementOnBidSeconds: {
+    type: Number,
+    default: 30
+  },
+  randomizeOrder: {
+    type: Boolean,
+    default: false
   },
   eventPlayers: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -47,6 +72,11 @@ const auctionEventSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true
+    },
+    status: {
+      type: String,
+      enum: ['registered', 'approved', 'rejected'],
+      default: 'registered'
     },
     registeredAt: {
       type: Date,
@@ -77,6 +107,18 @@ const auctionEventSchema = new mongoose.Schema({
   timer: {
     type: Number,
     default: 60
+  },
+  totalBids: {
+    type: Number,
+    default: 0
+  },
+  playersSold: {
+    type: Number,
+    default: 0
+  },
+  playersUnsold: {
+    type: Number,
+    default: 0
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,

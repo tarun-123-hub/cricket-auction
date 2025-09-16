@@ -3,138 +3,93 @@ import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import socket from '../utils/socket';
-import PlayerList from '../components/PlayerList';
-import AuctionControls from '../components/AuctionControls';
-import TeamList from '../components/TeamList';
-import AuctionEventForm from '../components/AuctionEventForm';
+import AuctionControlTab from '../components/admin/AuctionControlTab';
+import EventManagementTab from '../components/admin/EventManagementTab';
+import PlayersTab from '../components/admin/PlayersTab';
+import TeamsTab from '../components/admin/TeamsTab';
+import StatisticsTab from '../components/admin/StatisticsTab';
 import { motion } from 'framer-motion';
-import { Shield, Settings, Users, Calendar, GanttChartSquare } from 'lucide-react';
+import { Shield, Settings, Users, Calendar, GanttChartSquare, BarChart3 } from 'lucide-react';
 
 const AdminPanel = () => {
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
-  const [auctionState, setAuctionState] = useState({
-    isActive: false,
-    isEventLive: false,
-    isEventComplete: false,
-    eventName: '',
-    eventDescription: '',
-    maxPlayers: 0,
-    maxBidders: 8,
-    eventPlayers: [],
-    registeredBidders: [],
-    currentPlayer: null,
-    currentBid: 0,
-    baseBid: 0,
-    bidders: [],
-    timer: 60,
-    soldPlayers: [],
-    unsoldPlayers: [],
-    remainingPlayers: [],
-    teams: {},
-    currentPlayerIndex: 0
-  });
-  const [activeTab, setActiveTab] = useState('auction');
+  const [activeTab, setActiveTab] = useState('control');
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       navigate('/login');
       return;
     }
-
-    socket.on('auction-state', (state) => {
-      setAuctionState(state);
-    });
-
-    socket.on('auction-event-complete', (data) => {
-      toast.success(`Auction event "${data.eventName}" completed!`);
-      setAuctionState(prev => ({
-        ...prev,
-        isEventComplete: true,
-        isActive: false
-      }));
-    });
-
-    return () => {
-      socket.off('auction-state');
-      socket.off('auction-event-complete');
-    };
   }, [user, navigate]);
 
-  const handleStartAuction = (playerData) => {
-    socket.emit('start-auction', playerData);
-  };
-
-  const handleStartNextPlayer = () => {
-    socket.emit('start-next-player');
-  };
-
-  const handleEndAuction = (result) => {
-    socket.emit('end-auction', result);
-  };
-
-  const handleActivateEvent = () => {
-    socket.emit('activate-event');
-  };
-
   const tabs = [
-    { id: 'auction', label: 'Auction Control', icon: Shield },
-    { id: 'event', label: 'Event Management', icon: Calendar },
+    { id: 'control', label: 'Auction Control', icon: Shield },
+    { id: 'events', label: 'Event Management', icon: Calendar },
     { id: 'players', label: 'Players', icon: Users },
     { id: 'teams', label: 'Teams', icon: GanttChartSquare },
+    { id: 'statistics', label: 'Statistics', icon: BarChart3 },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white pt-20 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900/20 to-purple-900/20 text-white">
+      {/* Sidebar */}
+      <div className="fixed left-0 top-16 h-full w-64 bg-gray-800/90 backdrop-blur-xl border-r border-gray-700/50 z-40">
+        <div className="p-6">
           <div className="flex items-center space-x-3 mb-8">
-            <Settings className="h-10 w-10 text-purple-400" />
+            <Settings className="h-8 w-8 text-purple-400" />
             <div>
-              <h1 className="text-3xl font-cricket font-bold">Admin Panel</h1>
-              <p className="text-gray-400">Manage auction events and players</p>
+              <h2 className="text-xl font-cricket font-bold">Admin Panel</h2>
+              <p className="text-gray-400 text-sm">Manage auctions</p>
             </div>
           </div>
-        </motion.div>
+          
+          <nav className="space-y-2">
+            {tabs.map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${
+                    activeTab === tab.id
+                      ? 'bg-purple-600 text-white shadow-lg'
+                      : 'text-gray-300 hover:bg-gray-700/50 hover:text-white'
+                  }`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span className="font-medium">{tab.label}</span>
+                </button>
+              )
+            })}
+          </nav>
+        </div>
+      </div>
 
-        <div className="bg-gray-800 rounded-lg shadow-xl overflow-hidden mb-8">
-          <div className="border-b border-gray-700">
-            <nav className="flex -mb-px space-x-1 sm:space-x-4 px-4 sm:px-6">
-              {tabs.map(tab => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    className={`py-4 px-3 sm:px-6 text-center border-b-2 font-medium text-sm flex items-center space-x-2 transition-all duration-200 ${
-                      activeTab === tab.id
-                        ? 'border-purple-500 text-purple-400'
-                        : 'border-transparent text-gray-400 hover:text-white hover:border-gray-500'
-                    }`}
-                    onClick={() => setActiveTab(tab.id)}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                  </button>
-                )
-              })}
-            </nav>
-          </div>
+      {/* Main Content */}
+      <div className="ml-64 pt-16">
+        <div className="p-6">
+          <motion.div 
+            key={activeTab} 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.3 }}
+            className="min-h-screen"
+          >
+            {activeTab === 'control' && <AuctionControlTab />}
+            {activeTab === 'events' && <EventManagementTab />}
+            {activeTab === 'players' && <PlayersTab />}
+            {activeTab === 'teams' && <TeamsTab />}
+            {activeTab === 'statistics' && <StatisticsTab />}
+          </motion.div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-            <div className="p-6">
-              {activeTab === 'auction' && (
-                <AuctionControls
-                  auctionState={auctionState}
-                  onStartAuction={handleStartAuction}
-                  onStartNextPlayer={handleStartNextPlayer}
-                  onEndAuction={handleEndAuction}
-                  onActivateEvent={handleActivateEvent}
-                />
-              )}
+export default AdminPanel;
 
-              {activeTab === 'event' && <AuctionEventForm />}
-              {activeTab === 'players' && <PlayerList isAdmin={true} />}
-              {activeTab === 'teams' && <TeamList registeredBidders={auctionState.registeredBidders} />}
             </div>
           </motion.div>
         </div>

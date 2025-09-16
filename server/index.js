@@ -15,6 +15,8 @@ const { connectDB } = require('./config/database');
 const { authenticateSocket } = require('./middleware/auth');
 const Player = require('./models/Player');
 const AuctionEvent = require('./models/AuctionEvent');
+const AuctionEventPlayer = require('./models/AuctionEventPlayer');
+const Bid = require('./models/Bid');
 
 const app = express();
 const server = http.createServer(app);
@@ -72,6 +74,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/auction', auctionRoutes);
 app.use('/api/auction-event', auctionEventRoutes);
+
+// Make io available to routes
+app.set('io', io);
 
 // Global auction state
 let auctionState = {};
@@ -171,8 +176,6 @@ io.use((socket, next) => {
 });
 io.use(authenticateSocket);
 
-// Socket.IO connection handling
-io.use(authenticateSocket);
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.user.username} (${socket.user.role})`);
@@ -182,6 +185,115 @@ io.on('connection', (socket) => {
   
   // Send current auction state to newly connected user
   socket.emit('auction-state', auctionState);
+  
+  // Admin event management
+  if (socket.user.role === 'admin') {
+    socket.on('admin:create_event', async (payload) => {
+      try {
+        // This would be handled by the REST API, but we can emit confirmation
+        socket.emit('event:create_response', { success: true });
+      } catch (error) {
+        socket.emit('event:create_response', { success: false, error: error.message });
+      }
+    });
+    
+    socket.on('admin:activate_event', async ({ eventId }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId);
+        if (event) {
+          await AuctionEvent.updateMany({ status: 'active' }, { status: 'paused', isLive: false });
+          event.status = 'active';
+          event.isLive = true;
+          await event.save();
+          
+          io.emit('event:activated', { eventId, event });
+        }
+      } catch (error) {
+        socket.emit('error', { message: 'Failed to activate event' });
+      }
+    });
+    
+    socket.on('admin:delete_event', async ({ eventId }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId);
+        if (event && event.status !== 'active') {
+          await AuctionEventPlayer.deleteMany({ auctionId: eventId });
+          await Bid.deleteMany({ auctionId: eventId });
+          await AuctionEvent.findByIdAndDelete(eventId);
+          
+          io.emit('event:deleted', { eventId });
+        }
+      } catch (error) {
+        socket.emit('error', { message: 'Failed to delete event' });
+      }
+    });
+  }
+  
+  // Bidder registration and joining
+  if (socket.user.role === 'bidder') {
+    socket.on('bidder:register', async ({ eventId, teamData }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId);
+        if (!event) {
+          socket.emit('registration:error', { message: 'Event not found' });
+          return;
+        }
+        
+        if (event.registeredBidders.length >= event.maxBidders) {
+          socket.emit('registration:error', { message: 'Max bidders reached' });
+          return;
+        }
+        
+        // Registration logic would be handled by REST API
+        socket.emit('registration:success', { eventId });
+      } catch (error) {
+        socket.emit('registration:error', { message: error.message });
+      }
+    });
+    
+    socket.on('bidder:join', async ({ eventId }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId);
+        if (!event || event.status !== 'active') {
+          socket.emit('join:error', { message: 'Event not active' });
+          return;
+        }
+        
+        // Check if user is registered
+        const isRegistered = event.registeredBidders.some(
+          bidder => bidder.userId.toString() === socket.user.id
+        );
+        
+        if (!isRegistered) {
+          socket.emit('join:error', { message: 'Not registered for this event' });
+          return;
+        }
+        
+        socket.join(`auction:${eventId}`);
+        socket.emit('join:success', { eventId });
+      } catch (error) {
+        socket.emit('join:error', { message: error.message });
+      }
+    });
+  }
+  
+  // Spectator joining
+  if (socket.user.role === 'spectator') {
+    socket.on('spectator:join', async ({ eventId }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId);
+        if (!event || event.status !== 'active') {
+          socket.emit('join:error', { message: 'Event not active' });
+          return;
+        }
+        
+        socket.join(`auction:${eventId}`);
+        socket.emit('join:success', { eventId });
+      } catch (error) {
+        socket.emit('join:error', { message: error.message });
+      }
+    });
+  }
   
   // Handle bidder registration updates
   socket.on('bidder-registered', async () => {

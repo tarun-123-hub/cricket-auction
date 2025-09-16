@@ -107,12 +107,34 @@ router.post(
       const player = new Player(playerData);
       await player.save();
 
+      // Emit socket event
+      if (req.app && req.app.get('io')) {
+        req.app.get('io').emit('player:added', player);
+        
+        if (req.file) {
+          req.app.get('io').emit('player:image_uploaded', {
+            playerId: player._id,
+            photoUrl: playerData.image
+          });
+        }
+      }
+
       res.status(201).json({
         message: 'Player created successfully',
         player
       });
     } catch (error) {
       console.error('Error creating player:', error);
+      
+      // Clean up uploaded file if player creation failed
+      if (req.file) {
+        const fs = require('fs');
+        const filePath = path.join(__dirname, '../uploads/players', req.file.filename);
+        fs.unlink(filePath, (err) => {
+          if (err) console.error('Error deleting uploaded file:', err);
+        });
+      }
+      
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -152,12 +174,34 @@ router.put('/:id', authenticate, requireRole(['admin']), upload.single('image'),
       return res.status(404).json({ message: 'Player not found' });
     }
 
+    // Emit socket event
+    if (req.app && req.app.get('io')) {
+      req.app.get('io').emit('player:updated', player);
+      
+      if (req.file) {
+        req.app.get('io').emit('player:image_uploaded', {
+          playerId: player._id,
+          photoUrl: updateData.image
+        });
+      }
+    }
+
     res.json({
       message: 'Player updated successfully',
       player
     });
   } catch (error) {
     console.error('Error updating player:', error);
+    
+    // Clean up uploaded file if update failed
+    if (req.file) {
+      const fs = require('fs');
+      const filePath = path.join(__dirname, '../uploads/players', req.file.filename);
+      fs.unlink(filePath, (err) => {
+        if (err) console.error('Error deleting uploaded file:', err);
+      });
+    }
+    
     res.status(500).json({ message: 'Server error' });
   }
 });
