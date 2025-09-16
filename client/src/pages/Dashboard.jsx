@@ -22,7 +22,7 @@ import BidderRegistrationModal from '../components/BidderRegistrationModal'
 
 const Dashboard = () => {
   const { user } = useSelector((state) => state.auth)
-  const { isConnected } = useSelector((state) => state.socket)
+  const { isConnected, socket } = useSelector((state) => state.socket)
   const { isActive, currentPlayer, soldPlayers, unsoldPlayers } = useSelector((state) => state.auction)
   
   const [stats, setStats] = useState(null)
@@ -35,6 +35,28 @@ const Dashboard = () => {
     fetchStats()
     fetchLiveEvent()
   }, [])
+
+  useEffect(() => {
+    if (socket) {
+      const handleEventActivated = (data) => {
+        setLiveEvent(data.event);
+        if (data.event && user) {
+          const registration = data.event.registeredBidders.find(
+            bidder => bidder.userId._id === user.id || bidder.userId === user.id
+          );
+          setUserRegistration(registration);
+        } else {
+          setUserRegistration(null);
+        }
+      };
+
+      socket.on('event:activated', handleEventActivated);
+
+      return () => {
+        socket.off('event:activated', handleEventActivated);
+      };
+    }
+  }, [socket, user]);
 
   const fetchStats = async () => {
     try {

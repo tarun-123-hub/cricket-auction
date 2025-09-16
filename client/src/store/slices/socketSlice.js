@@ -97,7 +97,7 @@ export const initializeSocket = () => (dispatch, getState) => {
   }
 
   try {
-    const socket = io('http://localhost:5000', {
+    const socket = io('http://localhost:5001', {
       auth: {
         token: auth.token
       },
@@ -131,7 +131,7 @@ export const initializeSocket = () => (dispatch, getState) => {
     })
 
     // Event announcements
-    socket.on('event-activated', (payload) => {
+    socket.on('event:activated', (payload) => {
       toast.success(`Live Event: ${payload.eventName}`)
     })
 

@@ -14,6 +14,7 @@ import { Shield, Settings, Users, Calendar, GanttChartSquare, BarChart3 } from '
 const AdminPanel = () => {
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
+  const auctionState = useSelector((state) => state.auction);
   const [activeTab, setActiveTab] = useState('control');
 
   useEffect(() => {
@@ -68,35 +69,9 @@ const AdminPanel = () => {
 
       {/* Main Content */}
       <div className="ml-64 pt-16">
-        <div className="p-6">
-          <motion.div 
-            key={activeTab} 
-            initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.3 }}
-            className="min-h-screen"
-          >
-            {activeTab === 'control' && <AuctionControlTab />}
-            {activeTab === 'events' && <EventManagementTab />}
-            {activeTab === 'players' && <PlayersTab />}
-            {activeTab === 'teams' && <TeamsTab />}
-            {activeTab === 'statistics' && <StatisticsTab />}
-          </motion.div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default AdminPanel;
-
-            </div>
-          </motion.div>
-        </div>
-
-        {auctionState.currentPlayer && (
+        {auctionState && auctionState.currentPlayer && (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }}>
-            <div className="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
+            <div className="bg-gray-800 rounded-lg shadow-xl p-6 m-6 border border-gray-700">
               <h2 className="text-xl font-bold mb-4 text-yellow-400">Current Player on the Block</h2>
               <div className="flex items-center space-x-4">
                 <div className="w-20 h-20 bg-gray-700 rounded-full flex items-center justify-center overflow-hidden border-2 border-yellow-500">
@@ -119,6 +94,21 @@ export default AdminPanel;
             </div>
           </motion.div>
         )}
+        <div className="p-6">
+          <motion.div 
+            key={activeTab} 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.3 }}
+            className="min-h-screen"
+          >
+            {activeTab === 'control' && <AuctionControlTab />}
+            {activeTab === 'events' && <EventManagementTab />}
+            {activeTab === 'players' && <PlayersTab />}
+            {activeTab === 'teams' && <TeamsTab />}
+            {activeTab === 'statistics' && <StatisticsTab />}
+          </motion.div>
+        </div>
       </div>
     </div>
   );
