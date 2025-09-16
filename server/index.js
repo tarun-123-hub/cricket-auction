@@ -15,7 +15,6 @@ const { connectDB } = require('./config/database');
 const { authenticateSocket } = require('./middleware/auth');
 const Player = require('./models/Player');
 const AuctionEvent = require('./models/AuctionEvent');
-const AuctionEventPlayer = require('./models/AuctionEventPlayer');
 const Bid = require('./models/Bid');
 
 const app = express();
@@ -217,7 +216,6 @@ io.on('connection', (socket) => {
       try {
         const event = await AuctionEvent.findById(eventId);
         if (event && event.status !== 'active') {
-          await AuctionEventPlayer.deleteMany({ auctionId: eventId });
           await Bid.deleteMany({ auctionId: eventId });
           await AuctionEvent.findByIdAndDelete(eventId);
           

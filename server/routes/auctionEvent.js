@@ -3,7 +3,6 @@ const multer = require('multer');
 const path = require('path');
 const mongoose = require('mongoose');
 const AuctionEvent = require('../models/AuctionEvent');
-const AuctionEventPlayer = require('../models/AuctionEventPlayer');
 const Bid = require('../models/Bid');
 const Player = require('../models/Player');
 const { authenticate, requireRole } = require('../middleware/auth');
@@ -13,35 +12,20 @@ const router = express.Router();
 // Get all auction events
 router.get('/', authenticate, async (req, res) => {
   try {
-    // Get events with aggregated counts
-    const events = await AuctionEvent.aggregate([
-      {
-        $lookup: {
-          from: 'auctioneventplayers',
-          localField: '_id',
-          foreignField: 'auctionId',
-          as: 'eventPlayerDetails'
-        }
-      },
-      {
-        $addFields: {
-          playersCount: { $size: '$eventPlayerDetails' },
-          registeredTeamsCount: { $size: '$registeredBidders' }
-        }
-      },
-      {
-        $sort: { createdAt: -1 }
-      }
-    ]);
+    const events = await AuctionEvent.find()
+      .populate('eventPlayers', 'name role basePrice image age country')
+      .populate('registeredBidders.userId', 'username email')
+      .populate('createdBy', 'username')
+      .sort({ createdAt: -1 });
     
-    // Populate the events
-    await AuctionEvent.populate(events, [
-      { path: 'eventPlayers', select: 'name role basePrice image age country' },
-      { path: 'registeredBidders.userId', select: 'username email' },
-      { path: 'createdBy', select: 'username' }
-    ]);
+    // Add counts to each event
+    const eventsWithCounts = events.map(event => ({
+      ...event.toObject(),
+      playersCount: event.eventPlayers.length,
+      registeredTeamsCount: event.registeredBidders.length
+    }));
     
-    res.json(events);
+    res.json(eventsWithCounts);
   } catch (error) {
     console.error('Error fetching events:', error);
     res.status(500).json({ message: 'Server error' });
@@ -66,9 +50,6 @@ router.get('/all', authenticate, async (req, res) => {
 
 // Create auction event (Admin only) - Enhanced version
 router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
   try {
     const { 
       eventName, 
@@ -92,41 +73,16 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
       return res.status(400).json({ message: 'At least one player must be selected' });
     }
     
-    // Validate max bidders
-    const maxBiddersNum = parseInt(maxBidders) || 8;
-    if (maxBiddersNum < 2 || maxBiddersNum > 16) {
-      return res.status(400).json({ message: 'Max bidders must be between 2 and 16' });
-    }
-    
-    // Validate team purse default
-    const teamPurseDefaultNum = parseInt(teamPurseDefault) || 10000000;
-    if (teamPurseDefaultNum < 0) {
-      return res.status(400).json({ message: 'Team purse default must be non-negative' });
-    }
-    
-    // Validate players and their auction prices
-    const playerValidation = [];
-    for (const playerData of eventPlayers) {
-      if (!playerData.playerId || !mongoose.Types.ObjectId.isValid(playerData.playerId)) {
-        return res.status(400).json({ message: 'Invalid player ID provided' });
+    // Convert string IDs to ObjectIds if they're not already
+    const processedEventPlayers = eventPlayers.map(playerData => {
+      if (typeof playerData === 'string') {
+        return playerData;
       }
-      
-      if (playerData.auctionPrice === undefined || playerData.auctionPrice === null || playerData.auctionPrice < 0) {
-        const player = await Player.findById(playerData.playerId);
-        return res.status(400).json({ 
-          message: `Player ${player?.name || 'Unknown'} missing auction price` 
-        });
-      }
-      
-      playerValidation.push({
-        playerId: playerData.playerId,
-        auctionPrice: parseInt(playerData.auctionPrice),
-        orderIndex: playerData.orderIndex || 0
-      });
-    }
+      return playerData.playerId || playerData;
+    }).filter(id => mongoose.Types.ObjectId.isValid(id));
     
     // Verify all players exist
-    const playerIds = playerValidation.map(p => p.playerId);
+    const playerIds = processedEventPlayers;
     const existingPlayers = await Player.find({ _id: { $in: playerIds } });
     if (existingPlayers.length !== playerIds.length) {
       return res.status(400).json({ message: 'One or more players do not exist' });
@@ -137,30 +93,18 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
       eventName: eventName.trim(),
       eventDescription: eventDescription?.trim() || '',
       startTime: startTime ? new Date(startTime) : null,
-      maxPlayers: parseInt(maxPlayers) || playerValidation.length,
-      maxBidders: maxBiddersNum,
-      teamPurseDefault: teamPurseDefaultNum,
+      maxPlayers: parseInt(maxPlayers) || processedEventPlayers.length,
+      maxBidders: parseInt(maxBidders) || 8,
+      teamPurseDefault: parseInt(teamPurseDefault) || 10000000,
       timerSeconds: parseInt(timerSeconds) || 60,
       incrementOnBidSeconds: parseInt(incrementOnBidSeconds) || 30,
       randomizeOrder: Boolean(randomizeOrder),
-      eventPlayers: playerIds,
+      eventPlayers: processedEventPlayers,
       createdBy: req.user.id,
       status: 'draft'
     });
     
-    await event.save({ session });
-    
-    // Create AuctionEventPlayer entries
-    const eventPlayerEntries = playerValidation.map(p => ({
-      auctionId: event._id,
-      playerId: p.playerId,
-      auctionPrice: p.auctionPrice,
-      orderIndex: p.orderIndex
-    }));
-    
-    await AuctionEventPlayer.insertMany(eventPlayerEntries, { session });
-    
-    await session.commitTransaction();
+    await event.save();
     
     // Populate the created event
     await event.populate([
@@ -171,7 +115,7 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
     // Add counts
     const eventWithCounts = {
       ...event.toObject(),
-      playersCount: eventPlayerEntries.length,
+      playersCount: processedEventPlayers.length,
       registeredTeamsCount: 0
     };
     
@@ -185,7 +129,6 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
       event: eventWithCounts
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error creating auction event:', error);
     
     if (error.code === 11000) {
@@ -196,16 +139,11 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
       message: 'Failed to create auction event',
       error: error.message 
     });
-  } finally {
-    session.endSession();
   }
 });
 
 // Update auction event (Admin only)
 router.put('/:id', authenticate, requireRole(['admin']), async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
   try {
     const eventId = req.params.id;
     const { 
@@ -242,47 +180,20 @@ router.put('/:id', authenticate, requireRole(['admin']), async (req, res) => {
     
     // Update players if provided
     if (eventPlayers && Array.isArray(eventPlayers)) {
-      // Remove existing event players
-      await AuctionEventPlayer.deleteMany({ auctionId: eventId }, { session });
-      
-      // Validate and add new players
-      const playerValidation = [];
-      for (const playerData of eventPlayers) {
-        if (!playerData.playerId || !mongoose.Types.ObjectId.isValid(playerData.playerId)) {
-          return res.status(400).json({ message: 'Invalid player ID provided' });
+      // Convert string IDs to ObjectIds if they're not already
+      const processedEventPlayers = eventPlayers.map(playerData => {
+        if (typeof playerData === 'string') {
+          return playerData;
         }
-        
-        if (playerData.auctionPrice === undefined || playerData.auctionPrice === null || playerData.auctionPrice < 0) {
-          const player = await Player.findById(playerData.playerId);
-          return res.status(400).json({ 
-            message: `Player ${player?.name || 'Unknown'} missing auction price` 
-          });
-        }
-        
-        playerValidation.push({
-          playerId: playerData.playerId,
-          auctionPrice: parseInt(playerData.auctionPrice),
-          orderIndex: playerData.orderIndex || 0
-        });
-      }
-      
-      // Create new AuctionEventPlayer entries
-      const eventPlayerEntries = playerValidation.map(p => ({
-        auctionId: eventId,
-        playerId: p.playerId,
-        auctionPrice: p.auctionPrice,
-        orderIndex: p.orderIndex
-      }));
-      
-      await AuctionEventPlayer.insertMany(eventPlayerEntries, { session });
+        return playerData.playerId || playerData;
+      }).filter(id => mongoose.Types.ObjectId.isValid(id));
       
       // Update event players array
-      event.eventPlayers = playerValidation.map(p => p.playerId);
-      event.maxPlayers = playerValidation.length;
+      event.eventPlayers = processedEventPlayers;
+      event.maxPlayers = processedEventPlayers.length;
     }
     
-    await event.save({ session });
-    await session.commitTransaction();
+    await event.save();
     
     // Populate and return updated event
     await event.populate([
@@ -292,10 +203,9 @@ router.put('/:id', authenticate, requireRole(['admin']), async (req, res) => {
     ]);
     
     // Get counts
-    const eventPlayerCount = await AuctionEventPlayer.countDocuments({ auctionId: eventId });
     const eventWithCounts = {
       ...event.toObject(),
-      playersCount: eventPlayerCount,
+      playersCount: event.eventPlayers.length,
       registeredTeamsCount: event.registeredBidders.length
     };
     
@@ -309,22 +219,16 @@ router.put('/:id', authenticate, requireRole(['admin']), async (req, res) => {
       event: eventWithCounts
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error updating event:', error);
     res.status(500).json({ 
       message: 'Failed to update event',
       error: error.message 
     });
-  } finally {
-    session.endSession();
   }
 });
 
 // Delete auction event (Admin only)
 router.delete('/:id', authenticate, requireRole(['admin']), async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
   try {
     const eventId = req.params.id;
     
@@ -339,11 +243,8 @@ router.delete('/:id', authenticate, requireRole(['admin']), async (req, res) => 
     }
     
     // Delete associated records
-    await AuctionEventPlayer.deleteMany({ auctionId: eventId }, { session });
-    await Bid.deleteMany({ auctionId: eventId }, { session });
-    await AuctionEvent.findByIdAndDelete(eventId, { session });
-    
-    await session.commitTransaction();
+    await Bid.deleteMany({ auctionId: eventId });
+    await AuctionEvent.findByIdAndDelete(eventId);
     
     // Emit socket event
     if (req.app.get('io')) {
@@ -352,16 +253,33 @@ router.delete('/:id', authenticate, requireRole(['admin']), async (req, res) => 
     
     res.json({ message: 'Event deleted successfully' });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Error deleting event:', error);
     res.status(500).json({ 
       message: 'Failed to delete event',
       error: error.message 
     });
-  } finally {
-    session.endSession();
   }
 });
+
+// Get single event
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const event = await AuctionEvent.findById(req.params.id)
+      .populate('eventPlayers', 'name role basePrice image age country')
+      .populate('registeredBidders.userId', 'username email')
+      .populate('createdBy', 'username');
+    
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
+    }
+    
+    res.json(event);
+  } catch (error) {
+    console.error('Error fetching event:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Activate specific event (Admin only)
 router.post('/:id/activate', authenticate, requireRole(['admin']), async (req, res) => {
   try {
@@ -395,10 +313,9 @@ router.post('/:id/activate', authenticate, requireRole(['admin']), async (req, r
     ]);
     
     // Get counts
-    const eventPlayerCount = await AuctionEventPlayer.countDocuments({ auctionId: eventId });
     const eventWithCounts = {
       ...event.toObject(),
-      playersCount: eventPlayerCount,
+      playersCount: event.eventPlayers.length,
       registeredTeamsCount: event.registeredBidders.length
     };
     
