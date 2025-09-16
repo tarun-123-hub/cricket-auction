@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Orbitron:wght@400;700;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Responsive Breakpoints */
+@media (max-width: 640px) {
+  html {
+    font-size: 12px;
+  }
+  
+  .card {
+    min-width: 100% !important;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 1025px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-black text-gray-200 font-sans;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px; /* Reduced back to normal size */
+    line-height: 1.5;
+  }
+
+  h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.875rem; /* Reduced to 30px (1.875rem) */
+    line-height: 1.2;
+  }
+  
+  h2 {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.5rem; /* Reduced to 24px (1.5rem) */
+    line-height: 1.3;
+  }
+  
+  h3 {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.25rem; /* Reduced to 20px (1.25rem) */
+    line-height: 1.4;
+  }
+  
+  h4, h5, h6 {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.125rem; /* Reduced to 18px (1.125rem) */
+    line-height: 1.4;
+  }
+
+  @media (min-width: 1024px) {
+    body {
+      font-size: 16px; /* Normal text on desktop */
+    }
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 hover:shadow-xl text-sm; /* Reduced padding and font size */
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+    min-height: 40px; /* Reduced minimum height */
+    min-width: 100px; /* Reduced minimum width */
+  }
+
+  .btn-secondary {
+    @apply bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-md transition-all duration-200 hover:shadow-lg text-sm; /* Reduced padding and font size */
+    min-height: 40px; /* Reduced minimum height */
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-all duration-200 hover:shadow-lg text-sm; /* Reduced padding and font size */
+    min-height: 40px; /* Reduced minimum height */
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 bg-gray-800/70 backdrop-blur-sm border border-gray-700 rounded-md text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm; /* Reduced padding and font size */
+  }
+
+  .card {
+    @apply bg-gray-800/80 backdrop-blur-xl rounded-xl p-6 shadow-lg border border-gray-700/50 transition-all duration-300; /* Reduced padding back to p-6 */
+    min-width: 250px; /* Reduced minimum width */
+    min-height: 150px; /* Reduced minimum height */
+  }
+  
+  .card:hover {
+    @apply shadow-xl transform scale-[1.02] border-gray-600;
+  }
+}
+
+/* Custom scrollbar for a more modern look */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-blue-500/50 rounded-full border-2 border-gray-900;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-blue-500;
+}
