@@ -41,7 +41,7 @@ const Navbar = () => {
 
   const adminItems = [
     { path: '/admin', icon: Settings, label: 'Admin Panel' },
-    { path: '/admin/players', icon: Users, label: 'Players' },
+    { path: '/players', icon: Users, label: 'Players' },
   ]
 
   const isActive = (path) => location.pathname === path

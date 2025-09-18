@@ -39,6 +39,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (socket) {
       const handleEventActivated = (data) => {
+        console.log('Received event:activated:', data);
         setLiveEvent(data.event);
         if (data.event && user) {
           const registration = data.event.registeredBidders.find(
@@ -50,10 +51,34 @@ const Dashboard = () => {
         }
       };
 
+      const handleEventDeactivated = (data) => {
+        console.log('Received event:deactivated:', data);
+        setLiveEvent(null);
+        setUserRegistration(null);
+      };
+
+      const handleRegistrationAdded = ({ eventId, team }) => {
+        if (user && String((team.userId && (team.userId._id || team.userId))) === String(user.id)) {
+          setUserRegistration(team);
+        }
+        fetchLiveEvent();
+      };
+
+      const handleRegistrationStatus = ({ eventId, bidderId, status }) => {
+        setUserRegistration(prev => prev && String((prev._id || prev.id)) === String(bidderId) ? { ...prev, status } : prev);
+        fetchLiveEvent();
+      };
+
       socket.on('event:activated', handleEventActivated);
+      socket.on('event:deactivated', handleEventDeactivated);
+      socket.on('registration:added', handleRegistrationAdded);
+      socket.on('registration:status', handleRegistrationStatus);
 
       return () => {
         socket.off('event:activated', handleEventActivated);
+        socket.off('event:deactivated', handleEventDeactivated);
+        socket.off('registration:added', handleRegistrationAdded);
+        socket.off('registration:status', handleRegistrationStatus);
       };
     }
   }, [socket, user]);
@@ -71,14 +96,17 @@ const Dashboard = () => {
 
   const fetchLiveEvent = async () => {
     try {
+      console.log('Fetching live event...')
       const response = await axios.get('/auction-event/live')
+      console.log('Live event response:', response.data)
       setLiveEvent(response.data)
       
       // Check if current user is registered
-      if (response.data && user) {
-        const registration = response.data.registeredBidders.find(
-          bidder => bidder.userId._id === user.id || bidder.userId === user.id
-        )
+      if (response.data && user && response.data.registeredBidders) {
+        const registration = response.data.registeredBidders.find((bidder) => {
+          const bidderUserId = bidder?.userId && (bidder.userId._id || bidder.userId)
+          return String(bidderUserId) === String(user.id)
+        })
         setUserRegistration(registration)
       }
     } catch (error) {
@@ -133,14 +161,7 @@ const Dashboard = () => {
       color: 'bg-gradient-to-r from-purple-600 to-pink-600',
       available: user?.role === 'admin'
     },
-    {
-      title: 'Player Management',
-      description: 'Add and edit players',
-      icon: Users,
-      link: '/admin/players',
-      color: 'bg-gradient-to-r from-orange-600 to-red-600',
-      available: user?.role === 'admin'
-    }
+    
   ]
 
   if (loading) {
@@ -186,33 +207,69 @@ const Dashboard = () => {
             className="mb-6"
           >
             <div className="bg-gradient-to-r from-green-600 to-blue-600 p-6 rounded-xl shadow-xl border border-green-500/30">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-6">
+                <div className="flex-1">
                   <h3 className="text-lg font-bold text-white mb-2 flex items-center">
                     <Play className="h-5 w-5 mr-2" />
                     Live Auction Event
                   </h3>
-                  <p className="text-green-100 text-sm mb-1">{liveEvent.eventName}</p>
-                  <p className="text-green-200 text-sm">
-                    {liveEvent.registeredBidders.length}/{liveEvent.maxBidders} bidders registered
-                  </p>
+                  <p className="text-white text-base font-semibold mb-1">{liveEvent.eventName}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+                    <div className="bg-black/20 rounded-lg p-3 border border-white/10">
+                      <p className="text-xs text-green-200">Registered Teams</p>
+                      <p className="text-white font-bold">
+                        {liveEvent.registeredBidders.length}/{liveEvent.maxBidders}
+                      </p>
+                    </div>
+                    <div className="bg-black/20 rounded-lg p-3 border border-white/10">
+                      <p className="text-xs text-green-200">Players</p>
+                      <p className="text-white font-bold">{liveEvent.eventPlayers?.length || 0}</p>
+                    </div>
+                    <div className="bg-black/20 rounded-lg p-3 border border-white/10">
+                      <p className="text-xs text-green-200">Status</p>
+                      <p className="text-white font-bold">{liveEvent.status}</p>
+                    </div>
+                  </div>
                 </div>
                 <div className="text-right">
-                  {user?.role === 'bidder' && !userRegistration && (
-                    <button
-                      onClick={() => setShowRegistrationModal(true)}
-                      className="bg-white text-green-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg flex items-center space-x-2"
-                    >
-                      <UserPlus className="h-4 w-4" />
-                      <span>Register for Auction</span>
-                    </button>
-                  )}
-                  {user?.role === 'bidder' && userRegistration && (
-                    <div className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
-                      <CheckCircle className="h-4 w-4" />
-                      <span>Registered as {userRegistration.teamName}</span>
-                    </div>
-                  )}
+                  {(() => {
+                    if (user?.role !== 'bidder') return null;
+                    const myReg = userRegistration || (liveEvent?.registeredBidders || []).find(b => {
+                      const id = b.userId && (b.userId._id || b.userId);
+                      return String(id) === String(user?.id);
+                    });
+                    if (!myReg) {
+                      return (
+                        <button
+                          onClick={() => setShowRegistrationModal(true)}
+                          className="bg-white text-green-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg flex items-center space-x-2"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                          <span>Register for Auction</span>
+                        </button>
+                      );
+                    }
+                    if (myReg.status === 'approved') {
+                      return (
+                        <Link
+                          to="/auction"
+                          className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2 hover:bg-green-700"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                          <span>Join Event</span>
+                        </Link>
+                      );
+                    }
+                    return (
+                      <div className="flex items-center space-x-3">
+                        <div className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
+                          <CheckCircle className="h-4 w-4" />
+                          <span>Registered as {myReg.teamName}</span>
+                        </div>
+                        <span className="text-xs text-gray-300">(Waiting for admin approval)</span>
+                      </div>
+                    );
+                  })()}
                   {user?.role === 'admin' && (
                     <Link
                       to="/admin"
@@ -248,7 +305,7 @@ const Dashboard = () => {
                 </div>
                 {userRegistration.teamImage && (
                   <img
-                    src={userRegistration.teamImage}
+                  src={userRegistration.teamImage.startsWith('http') ? userRegistration.teamImage : `http://localhost:5001${userRegistration.teamImage}`}
                     alt={userRegistration.teamName}
                     className="w-16 h-16 rounded-full object-cover border-2 border-white/30"
                   />

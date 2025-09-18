@@ -54,7 +54,6 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
     const { 
       eventName, 
       eventDescription, 
-      startTime,
       maxPlayers, 
       maxBidders, 
       teamPurseDefault,
@@ -92,7 +91,6 @@ router.post('/', authenticate, requireRole(['admin']), async (req, res) => {
     const event = new AuctionEvent({
       eventName: eventName.trim(),
       eventDescription: eventDescription?.trim() || '',
-      startTime: startTime ? new Date(startTime) : null,
       maxPlayers: parseInt(maxPlayers) || processedEventPlayers.length,
       maxBidders: parseInt(maxBidders) || 8,
       teamPurseDefault: parseInt(teamPurseDefault) || 10000000,
@@ -149,7 +147,6 @@ router.put('/:id', authenticate, requireRole(['admin']), async (req, res) => {
     const { 
       eventName, 
       eventDescription, 
-      startTime,
       maxBidders, 
       teamPurseDefault,
       timerSeconds,
@@ -171,7 +168,6 @@ router.put('/:id', authenticate, requireRole(['admin']), async (req, res) => {
     // Update event fields
     if (eventName) event.eventName = eventName.trim();
     if (eventDescription !== undefined) event.eventDescription = eventDescription.trim();
-    if (startTime) event.startTime = new Date(startTime);
     if (maxBidders) event.maxBidders = parseInt(maxBidders);
     if (teamPurseDefault !== undefined) event.teamPurseDefault = parseInt(teamPurseDefault);
     if (timerSeconds) event.timerSeconds = parseInt(timerSeconds);
@@ -239,7 +235,7 @@ router.delete('/:id', authenticate, requireRole(['admin']), async (req, res) => 
     
     // Don't allow deleting active events
     if (event.status === 'active') {
-      return res.status(400).json({ message: 'Cannot delete active event' });
+      return res.status(400).json({ message: 'Cannot delete active event. Please deactivate it first.' });
     }
     
     // Delete associated records
@@ -248,6 +244,7 @@ router.delete('/:id', authenticate, requireRole(['admin']), async (req, res) => 
     
     // Emit socket event
     if (req.app.get('io')) {
+      console.log('Emitting event:deleted to all clients:', { eventId });
       req.app.get('io').emit('event:deleted', { eventId });
     }
     
@@ -261,7 +258,137 @@ router.delete('/:id', authenticate, requireRole(['admin']), async (req, res) => 
   }
 });
 
-// Get single event
+// Live event info (must come before any `/:id` routes)
+router.get('/live', authenticate, async (req, res) => {
+  try {
+    const liveEvent = await AuctionEvent.findOne({ isLive: true })
+      .populate('eventPlayers')
+      .populate('registeredBidders.userId', 'username email');
+    res.json(liveEvent);
+  } catch (error) {
+    console.error('Error fetching live event:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Register for auction (Bidder only) (place before `/:id`)
+const fs = require('fs');
+const uploadsDir = 'uploads/teams';
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for team image uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/teams/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'team-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
+
+router.post('/register', authenticate, upload.single('teamImage'), async (req, res) => {
+  try {
+    const { teamName, ownerName } = req.body;
+    if (!teamName || !ownerName) {
+      return res.status(400).json({ message: 'Team name and owner name are required' });
+    }
+    const liveEvent = await AuctionEvent.findOne({ isLive: true });
+    if (!liveEvent) {
+      return res.status(404).json({ message: 'No live auction event found' });
+    }
+    const existingRegistration = liveEvent.registeredBidders.find(
+      bidder => bidder.userId.toString() === req.user.id
+    );
+    if (existingRegistration) {
+      return res.status(400).json({ message: 'You are already registered for this event' });
+    }
+    const existingTeam = liveEvent.registeredBidders.find(
+      bidder => bidder.teamName.toLowerCase() === teamName.toLowerCase()
+    );
+    if (existingTeam) {
+      return res.status(400).json({ message: 'Team name already taken' });
+    }
+    if (liveEvent.registeredBidders.length >= liveEvent.maxBidders) {
+      return res.status(409).json({ message: 'Max bidders reached' });
+    }
+    const registration = {
+      teamName,
+      ownerName,
+      teamImage: req.file ? `/uploads/teams/${req.file.filename}` : null,
+      userId: req.body.userId || req.user.id,
+      purse: liveEvent.teamPurseDefault || 0,
+      status: 'registered',
+      registeredAt: new Date()
+    };
+    liveEvent.registeredBidders.push(registration);
+    await liveEvent.save();
+    if (req.app.get('io')) {
+      req.app.get('io').emit('registration:added', { 
+        eventId: liveEvent._id, 
+        team: registration 
+      });
+    }
+    res.status(201).json({
+      message: 'Successfully registered for auction',
+      registration
+    });
+  } catch (error) {
+    console.error('Error registering for auction:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Auction statistics (place before `/:id`)
+router.get('/stats', authenticate, async (req, res) => {
+  try {
+    const liveEvent = await AuctionEvent.findOne({ isLive: true })
+      .populate('eventPlayers');
+    if (!liveEvent) {
+      return res.json({ totalPlayers: 0, soldPlayers: 0, unsoldPlayers: 0, totalValue: 0, teamStats: [] });
+    }
+    const soldPlayers = await Player.countDocuments({ _id: { $in: liveEvent.eventPlayers }, auctionStatus: 'sold' });
+    const unsoldPlayers = await Player.countDocuments({ _id: { $in: liveEvent.eventPlayers }, auctionStatus: 'unsold' });
+    const totalValue = await Player.aggregate([
+      { $match: { _id: { $in: liveEvent.eventPlayers }, auctionStatus: 'sold' }},
+      { $group: { _id: null, total: { $sum: '$finalPrice' } } }
+    ]);
+    const teamStats = await Player.aggregate([
+      { $match: { _id: { $in: liveEvent.eventPlayers }, auctionStatus: 'sold' }},
+      { $group: { _id: '$soldTo', players: { $sum: 1 }, totalSpent: { $sum: '$finalPrice' } } },
+      { $sort: { totalSpent: -1 } }
+    ]);
+    res.json({
+      totalPlayers: liveEvent.eventPlayers.length,
+      soldPlayers,
+      unsoldPlayers,
+      totalValue: totalValue[0]?.total || 0,
+      teamStats
+    });
+  } catch (error) {
+    console.error('Error fetching auction stats:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Get single event (keep after above routes)
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const event = await AuctionEvent.findById(req.params.id)
@@ -297,7 +424,7 @@ router.post('/:id/activate', authenticate, requireRole(['admin']), async (req, r
     // Deactivate all other events (only one can be active)
     await AuctionEvent.updateMany(
       { status: 'active' }, 
-      { status: 'paused', isLive: false, isActive: false }
+      { status: 'draft', isLive: false, isActive: false }
     );
     
     // Activate the selected event
@@ -321,6 +448,7 @@ router.post('/:id/activate', authenticate, requireRole(['admin']), async (req, r
     
     // Emit socket event
     if (req.app.get('io')) {
+      console.log('Emitting event:activated to all clients:', { eventId, event: eventWithCounts });
       req.app.get('io').emit('event:activated', { eventId, event: eventWithCounts });
     }
     
@@ -341,7 +469,7 @@ router.post('/:id/deactivate', authenticate, requireRole(['admin']), async (req,
     
     const event = await AuctionEvent.findByIdAndUpdate(
       eventId,
-      { status: 'paused', isLive: false, isActive: false },
+      { status: 'draft', isLive: false, isActive: false },
       { new: true }
     );
     
@@ -351,6 +479,7 @@ router.post('/:id/deactivate', authenticate, requireRole(['admin']), async (req,
     
     // Emit socket event
     if (req.app.get('io')) {
+      console.log('Emitting event:deactivated to all clients:', { eventId });
       req.app.get('io').emit('event:deactivated', { eventId });
     }
     
@@ -364,35 +493,7 @@ router.post('/:id/deactivate', authenticate, requireRole(['admin']), async (req,
   }
 });
 
-// Configure multer for team image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/teams/');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'team-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
-  }
-});
-
 // Create uploads directory if it doesn't exist
-const fs = require('fs');
-const uploadsDir = 'uploads/teams';
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -546,6 +647,44 @@ router.patch('/bidder/:bidderId/purse', authenticate, requireRole(['admin']), as
     });
   } catch (error) {
     console.error('Error updating purse:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Approve or reject bidder (Admin only)
+router.patch('/bidder/:bidderId/status', authenticate, requireRole(['admin']), async (req, res) => {
+  try {
+    const { bidderId } = req.params;
+    const { status } = req.body; // 'approved' or 'rejected'
+    
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+    
+    const liveEvent = await AuctionEvent.findOne({ isLive: true });
+    if (!liveEvent) {
+      return res.status(404).json({ message: 'No live auction event found' });
+    }
+    
+    const bidder = liveEvent.registeredBidders.id(bidderId);
+    if (!bidder) {
+      return res.status(404).json({ message: 'Bidder not found' });
+    }
+    
+    bidder.status = status;
+    await liveEvent.save();
+    
+    if (req.app.get('io')) {
+      req.app.get('io').emit('registration:status', { 
+        eventId: liveEvent._id,
+        bidderId,
+        status
+      });
+    }
+    
+    res.json({ message: 'Status updated', bidder });
+  } catch (error) {
+    console.error('Error updating bidder status:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

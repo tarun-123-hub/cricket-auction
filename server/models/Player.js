@@ -10,7 +10,7 @@ const playerSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 16,
-    max: 45
+    max: 50
   },
   country: {
     type: String,
@@ -19,7 +19,7 @@ const playerSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Batsman', 'Bowler', 'All-rounder', 'Wicket-keeper'],
+    enum: ['Batsman', 'Bowler', 'All-rounder', 'Wicket-keeper', 'Captain'],
     required: true
   },
   battingStyle: {
@@ -29,8 +29,17 @@ const playerSchema = new mongoose.Schema({
   },
   bowlingStyle: {
     type: String,
-    enum: ['Right-arm fast', 'Left-arm fast', 'Right-arm medium', 'Left-arm medium', 
-           'Right-arm off-spin', 'Left-arm orthodox', 'Right-arm leg-spin', 'Left-arm chinaman', 'None']
+    enum: [
+      // Pace and medium
+      'Right-arm fast', 'Left-arm fast', 'Right-arm medium', 'Left-arm medium',
+      // Spin (generic)
+      'Right-arm spin', 'Left-arm spin',
+      // Spin (specific)
+      'Right-arm off-spin', 'Left-arm orthodox', 'Right-arm leg-spin', 'Left-arm chinaman',
+      // No bowling
+      'None'
+    ],
+    default: 'None'
   },
   basePrice: {
     type: Number,

@@ -30,10 +30,12 @@ const TeamsTab = () => {
     if (socket) {
       socket.on('registration:added', handleRegistrationAdded);
       socket.on('purse:updated', handlePurseUpdated);
+      socket.on('registration:status', handleRegistrationStatus);
       
       return () => {
         socket.off('registration:added', handleRegistrationAdded);
         socket.off('purse:updated', handlePurseUpdated);
+        socket.off('registration:status', handleRegistrationStatus);
       };
     }
   }, [socket]);
@@ -88,6 +90,14 @@ const TeamsTab = () => {
     }
   };
 
+  const handleRegistrationStatus = ({ eventId, bidderId, status }) => {
+    if (selectedEvent && selectedEvent._id === eventId) {
+      setTeams(prev => prev.map(team => 
+        team._id === bidderId ? { ...team, status } : team
+      ));
+    }
+  };
+
   const handleUpdatePurse = async (bidderId, newPurse) => {
     try {
       await axios.patch(`/auction-event/bidder/${bidderId}/purse`, { purse: newPurse });
@@ -98,13 +108,23 @@ const TeamsTab = () => {
   };
 
   const handleApproveTeam = async (teamId) => {
-    // Implementation for approving team
-    toast.success('Team approved!');
+    try {
+      await axios.patch(`/auction-event/bidder/${teamId}/status`, { status: 'approved' });
+      setTeams(prev => prev.map(t => t._id === teamId ? { ...t, status: 'approved' } : t));
+      toast.success('Team approved!');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to approve team');
+    }
   };
 
   const handleRejectTeam = async (teamId) => {
-    // Implementation for rejecting team
-    toast.success('Team rejected!');
+    try {
+      await axios.patch(`/auction-event/bidder/${teamId}/status`, { status: 'rejected' });
+      setTeams(prev => prev.map(t => t._id === teamId ? { ...t, status: 'rejected' } : t));
+      toast.success('Team rejected!');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reject team');
+    }
   };
 
   const formatCurrency = (amount) =>

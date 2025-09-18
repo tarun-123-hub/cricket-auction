@@ -5,11 +5,10 @@ import { toast } from 'react-toastify';
 import socket from '../utils/socket';
 import AuctionControlTab from '../components/admin/AuctionControlTab';
 import EventManagementTab from '../components/admin/EventManagementTab';
-import PlayersTab from '../components/admin/PlayersTab';
 import TeamsTab from '../components/admin/TeamsTab';
 import StatisticsTab from '../components/admin/StatisticsTab';
 import { motion } from 'framer-motion';
-import { Shield, Settings, Users, Calendar, GanttChartSquare, BarChart3 } from 'lucide-react';
+import { Shield, Settings, Calendar, GanttChartSquare, BarChart3 } from 'lucide-react';
 
 const AdminPanel = () => {
   const navigate = useNavigate();
@@ -27,7 +26,6 @@ const AdminPanel = () => {
   const tabs = [
     { id: 'control', label: 'Auction Control', icon: Shield },
     { id: 'events', label: 'Event Management', icon: Calendar },
-    { id: 'players', label: 'Players', icon: Users },
     { id: 'teams', label: 'Teams', icon: GanttChartSquare },
     { id: 'statistics', label: 'Statistics', icon: BarChart3 },
   ];
@@ -104,7 +102,6 @@ const AdminPanel = () => {
           >
             {activeTab === 'control' && <AuctionControlTab />}
             {activeTab === 'events' && <EventManagementTab />}
-            {activeTab === 'players' && <PlayersTab />}
             {activeTab === 'teams' && <TeamsTab />}
             {activeTab === 'statistics' && <StatisticsTab />}
           </motion.div>

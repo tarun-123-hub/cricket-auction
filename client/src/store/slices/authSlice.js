@@ -2,8 +2,8 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 
-// Configure axios defaults
-axios.defaults.baseURL = 'http://localhost:5000'
+// Configure axios defaults - use Vite proxy (/api -> server) to avoid port mismatches
+axios.defaults.baseURL = '/api'
 axios.defaults.withCredentials = true; // Send cookies with requests
 
 // Async thunks
@@ -11,7 +11,7 @@ export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async ({ username, password }, { rejectWithValue }) => {
     try {
-      const response = await axios.post('/api/auth/login', { username, password })
+      const response = await axios.post('/auth/login', { username, password })
       toast.success('Login successful!')
       return response.data
     } catch (error) {
@@ -26,7 +26,7 @@ export const registerUser = createAsyncThunk(
   'auth/registerUser',
   async (userData, { rejectWithValue }) => {
     try {
-      const response = await axios.post('/api/auth/register', userData)
+      const response = await axios.post('/auth/register', userData)
       toast.success('Registration successful!')
       return response.data
     } catch (error) {
@@ -41,7 +41,7 @@ export const checkAuth = createAsyncThunk(
   'auth/checkAuth',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get('/api/auth/me')
+      const response = await axios.get('/auth/me')
       return response.data
     } catch (error) {
       return rejectWithValue('Not authenticated')
@@ -53,7 +53,7 @@ export const logoutUser = createAsyncThunk(
   'auth/logoutUser',
   async (_, { dispatch }) => {
     try {
-      await axios.post('/api/auth/logout')
+      await axios.post('/auth/logout')
       toast.success('Logged out successfully')
     } catch (error) {
       console.error('Logout API error:', error)
@@ -95,9 +95,9 @@ const authSlice = createSlice({
     localLogin: (state, action) => {
       const { username, password } = action.payload || {}
       const demoUsers = {
-        admin: { password: 'admin123', role: 'admin' },
-        bidder: { password: 'bidder123', role: 'bidder' },
-        spectator: { password: 'spectator123', role: 'spectator' },
+        admin: { password: 'admin123', role: 'admin', id: '507f1f77bcf86cd799439011' },
+        bidder: { password: 'bidder123', role: 'bidder', id: '507f1f77bcf86cd799439012' },
+        spectator: { password: 'spectator123', role: 'spectator', id: '507f1f77bcf86cd799439013' },
       }
 
       const found = demoUsers[username?.trim()?.toLowerCase?.()] || null
@@ -112,7 +112,7 @@ const authSlice = createSlice({
       }
 
       state.isAuthenticated = true
-      state.user = { username, role: found.role }
+      state.user = { username, role: found.role, id: found.id }
       state.token = `local_dev_token_${found.role}`
       state.isLoading = false
       state.error = null

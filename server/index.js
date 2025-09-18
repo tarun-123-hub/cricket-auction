@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const session = require('express-session');
+const path = require('path');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -34,7 +35,11 @@ const io = socketIo(server, {
 });
 
 // Security middleware
-app.use(helmet());
+// Allow cross-origin loading of static images from the client (Vite/React dev server)
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginEmbedderPolicy: false
+}));
 app.use(cors(corsOptions));
 
 // Rate limiting
@@ -62,11 +67,14 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 
-// Static files
-app.use('/uploads', express.static('uploads'));
+// Static files with explicit headers to allow cross-origin
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB (single initialization handled below)
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -181,12 +189,28 @@ io.on('connection', (socket) => {
   
   // Join user to appropriate room based on role
   socket.join(socket.user.role);
+  console.log(`User ${socket.user.username} joined room: ${socket.user.role}`);
   
   // Send current auction state to newly connected user
   socket.emit('auction-state', auctionState);
   
   // Admin event management
   if (socket.user.role === 'admin') {
+    socket.on('start-event', async ({ eventId }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId);
+        if (event) {
+          event.isActive = true;
+          await event.save();
+          
+          // Emit to all clients that the event has started
+          io.emit('event:started', { eventId, event });
+        }
+      } catch (error) {
+        socket.emit('error', { message: 'Failed to start event' });
+      }
+    });
+    
     socket.on('admin:create_event', async (payload) => {
       try {
         // This would be handled by the REST API, but we can emit confirmation
@@ -257,13 +281,18 @@ io.on('connection', (socket) => {
           return;
         }
         
-        // Check if user is registered
-        const isRegistered = event.registeredBidders.some(
+        // Check if user is approved
+        const registrant = event.registeredBidders.find(
           bidder => bidder.userId.toString() === socket.user.id
         );
+        const isRegistered = !!registrant;
         
         if (!isRegistered) {
           socket.emit('join:error', { message: 'Not registered for this event' });
+          return;
+        }
+        if (registrant.status !== 'approved') {
+          socket.emit('join:error', { message: 'Registration not approved yet' });
           return;
         }
         
@@ -617,14 +646,33 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-const PORT = process.env.PORT || 5001;
+const DEFAULT_PORT = parseInt(process.env.PORT, 10) || 5001;
 
 // Initialize auction state on server start
 connectDB().then(() => {
   initializeAuctionState();
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV}`);
-});
+function startHttpServer(startPort, attempt = 0) {
+  const port = startPort;
+  const onError = (err) => {
+    if (err && err.code === 'EADDRINUSE' && attempt < 5) {
+      const nextPort = port + 1;
+      console.warn(`⚠️  Port ${port} in use. Retrying on ${nextPort}...`);
+      server.removeListener('error', onError);
+      setTimeout(() => startHttpServer(nextPort, attempt + 1), 300);
+    } else {
+      console.error('Server failed to start:', err);
+      process.exit(1);
+    }
+  };
+
+  server.once('error', onError);
+  server.listen(port, () => {
+    server.removeListener('error', onError);
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`🌐 Environment: ${process.env.NODE_ENV}`);
+  });
+}
+
+startHttpServer(DEFAULT_PORT);

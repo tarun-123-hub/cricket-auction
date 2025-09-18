@@ -28,7 +28,6 @@ const EventManagementTab = () => {
   const [formData, setFormData] = useState({
     eventName: '',
     eventDescription: '',
-    startTime: '',
     maxBidders: 8,
     teamPurseDefault: 10000000,
     timerSeconds: 60,
@@ -42,7 +41,16 @@ const EventManagementTab = () => {
   useEffect(() => {
     fetchPlayers();
     fetchEvents();
-  }, []);
+    
+    // Socket listeners
+    if (socket) {
+      socket.on('event:deleted', handleEventDeleted);
+      
+      return () => {
+        socket.off('event:deleted', handleEventDeleted);
+      };
+    }
+  }, [socket]);
 
   const fetchPlayers = async () => {
     try {
@@ -183,6 +191,11 @@ const EventManagementTab = () => {
     }
   };
 
+  const handleEventDeleted = ({ eventId }) => {
+    setEvents(prev => prev.filter(event => event._id !== eventId));
+    toast.success('Event deleted!');
+  };
+
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -221,7 +234,7 @@ const EventManagementTab = () => {
                 <h3 className="text-xl font-bold text-white mb-2">{event.eventName}</h3>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
                   event.status === 'active' ? 'bg-green-500/20 text-green-300' :
-                  event.status === 'paused' ? 'bg-orange-500/20 text-orange-300' :
+                  event.status === 'draft' ? 'bg-yellow-500/20 text-yellow-300' :
                   event.status === 'ended' ? 'bg-gray-500/20 text-gray-300' :
                   'bg-yellow-500/20 text-yellow-300'
                 }`}>
@@ -233,6 +246,7 @@ const EventManagementTab = () => {
                   onClick={() => handleEditEvent(event)}
                   disabled={event.status === 'active'}
                   className="p-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors duration-200"
+                  title={event.status === 'active' ? 'Deactivate event first to edit' : 'Edit event'}
                 >
                   <Edit className="h-4 w-4" />
                 </button>
@@ -240,6 +254,7 @@ const EventManagementTab = () => {
                   onClick={() => handleDeleteEvent(event._id)}
                   disabled={event.status === 'active'}
                   className="p-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors duration-200"
+                  title={event.status === 'active' ? 'Deactivate event first to delete' : 'Delete event'}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -326,14 +341,17 @@ const EventManagementTab = () => {
                   
                   <div>
                     <label className="block text-gray-300 text-sm font-bold mb-2">
-                      Start Time
+                      Max Bidders
                     </label>
                     <input
-                      name="startTime"
-                      type="datetime-local"
-                      value={formData.startTime}
+                      name="maxBidders"
+                      type="number"
+                      min="2"
+                      max="12"
+                      value={formData.maxBidders}
                       onChange={handleInputChange}
                       className="input-field"
+                      required
                     />
                   </div>
                 </div>
@@ -352,23 +370,7 @@ const EventManagementTab = () => {
                 </div>
 
                 {/* Settings */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label className="block text-gray-300 text-sm font-bold mb-2">
-                      Max Bidders
-                    </label>
-                    <input
-                      name="maxBidders"
-                      type="number"
-                      min="2"
-                      max="16"
-                      value={formData.maxBidders}
-                      onChange={handleInputChange}
-                      className="input-field"
-                      required
-                    />
-                  </div>
-                  
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-gray-300 text-sm font-bold mb-2">
                       Team Purse Default

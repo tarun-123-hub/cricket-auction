@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { registerUser, clearError } from '../store/slices/authSlice'
 import { Trophy, Mail, Lock, User, Users, Eye, EyeOff } from 'lucide-react'
@@ -18,7 +18,18 @@ const Register = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const dispatch = useDispatch()
-  const { isLoading, error } = useSelector((state) => state.auth)
+  const navigate = useNavigate()
+  const { isLoading, error, isAuthenticated, user } = useSelector((state) => state.auth)
+  
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.role === 'bidder') {
+        navigate('/auction-waiting')
+      } else {
+        navigate('/dashboard')
+      }
+    }
+  }, [isAuthenticated, user, navigate])
 
   const handleChange = (e) => {
     setFormData({
@@ -32,7 +43,7 @@ const Register = () => {
     }
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     
     // Validation
@@ -45,7 +56,23 @@ const Register = () => {
     }
 
     const { confirmPassword, ...submitData } = formData
-    dispatch(registerUser(submitData))
+    try {
+      const result = await dispatch(registerUser(submitData)).unwrap()
+      
+      // Force immediate redirection based on role
+      if (submitData.role === 'bidder') {
+        // Small timeout to ensure toast message is visible
+        setTimeout(() => {
+          navigate('/auction-waiting', { replace: true })
+        }, 500)
+      } else {
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true })
+        }, 500)
+      }
+    } catch (error) {
+      console.error('Registration failed:', error)
+    }
   }
 
   const passwordsMatch = formData.password === formData.confirmPassword

@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const Player = require('../models/Player');
 const { authenticate, requireRole } = require('../middleware/auth');
 
@@ -9,7 +10,13 @@ const router = express.Router();
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/players/');
+    // Ensure absolute path is used
+    const uploadPath = path.join(__dirname, '..', 'uploads', 'players');
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -35,14 +42,24 @@ const upload = multer({
   }
 });
 
-// Create uploads directory if it doesn't exist
-const fs = require('fs');
-const uploadsDir = 'uploads/players';
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
-// Get all players
+// Upload image endpoint
+router.post('/upload', authenticate, requireRole(['admin']), upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+    
+    res.json({
+      message: 'Image uploaded successfully',
+      imagePath: `/uploads/players/${req.file.filename}`
+    });
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    res.status(500).json({ message: 'Failed to upload image' });
+  }
+});
+
 // Get all players
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -83,29 +100,49 @@ router.post(
   upload.single('image'),
   async (req, res) => {
     try {
+      console.log('Creating player with data:', req.body);
+      
       const playerData = {
-        ...req.body,
-        basePrice: parseInt(req.body.basePrice),
-        age: parseInt(req.body.age)
+        name: (req.body.name || '').trim(),
+        role: req.body.role,
+        basePrice: parseInt(req.body.basePrice, 10),
+        age: parseInt(req.body.age, 10),
+        country: (req.body.country || '').trim(),
+        battingStyle: req.body.battingStyle,
+        bowlingStyle: req.body.bowlingStyle || 'None'
       };
 
       if (req.file) {
+        // Store the correct path in the database
         playerData.image = `/uploads/players/${req.file.filename}`;
+        console.log('Image uploaded successfully:', req.file.filename, 'Full path:', req.file.path);
+      } else {
+        console.log('No image file received in request');
       }
 
       // Parse stats if provided
       if (req.body.stats) {
         try {
-          playerData.stats = typeof req.body.stats === 'string' 
+          const stats = typeof req.body.stats === 'string' 
             ? JSON.parse(req.body.stats) 
             : req.body.stats;
+          playerData.stats = {
+            matches: parseInt(stats.matches || 0, 10),
+            runs: parseInt(stats.runs || 0, 10),
+            wickets: parseInt(stats.wickets || 0, 10),
+            average: parseFloat(stats.average || 0),
+            strikeRate: parseFloat(stats.strikeRate || 0)
+          };
         } catch (e) {
           console.error('Error parsing stats:', e);
+          playerData.stats = { matches: 0, runs: 0, wickets: 0, average: 0, strikeRate: 0 };
         }
       }
 
       const player = new Player(playerData);
+      console.log('Saving player:', player);
       await player.save();
+      console.log('Player saved successfully:', player._id);
 
       // Emit socket event
       if (req.app && req.app.get('io')) {
@@ -128,11 +165,14 @@ router.post(
       
       // Clean up uploaded file if player creation failed
       if (req.file) {
-        const fs = require('fs');
-        const filePath = path.join(__dirname, '../uploads/players', req.file.filename);
-        fs.unlink(filePath, (err) => {
-          if (err) console.error('Error deleting uploaded file:', err);
-        });
+        try {
+          const filePath = path.join(__dirname, '..', 'uploads', 'players', req.file.filename);
+          fs.unlink(filePath, (err) => {
+            if (err) console.error('Error deleting uploaded file:', err);
+          });
+        } catch (err) {
+          console.error('Error handling file cleanup:', err);
+        }
       }
       
       res.status(500).json({ message: 'Server error' });
