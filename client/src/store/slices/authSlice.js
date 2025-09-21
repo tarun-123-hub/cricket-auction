@@ -54,7 +54,7 @@ export const logoutUser = createAsyncThunk(
   async (_, { dispatch }) => {
     try {
       await axios.post('/auth/logout')
-      toast.success('Logged out successfully')
+      // Don't show toast here since localLogout handles the UI feedback
     } catch (error) {
       console.error('Logout API error:', error)
     }
@@ -132,6 +132,7 @@ const authSlice = createSlice({
       state.token = null
       state.error = null
       try { localStorage.removeItem(STORAGE_KEY) } catch (_) {}
+      toast.success('Logged out successfully')
     },
   },
   extraReducers: (builder) => {

@@ -57,28 +57,12 @@ const Dashboard = () => {
         setUserRegistration(null);
       };
 
-      const handleRegistrationAdded = ({ eventId, team }) => {
-        if (user && String((team.userId && (team.userId._id || team.userId))) === String(user.id)) {
-          setUserRegistration(team);
-        }
-        fetchLiveEvent();
-      };
-
-      const handleRegistrationStatus = ({ eventId, bidderId, status }) => {
-        setUserRegistration(prev => prev && String((prev._id || prev.id)) === String(bidderId) ? { ...prev, status } : prev);
-        fetchLiveEvent();
-      };
-
       socket.on('event:activated', handleEventActivated);
       socket.on('event:deactivated', handleEventDeactivated);
-      socket.on('registration:added', handleRegistrationAdded);
-      socket.on('registration:status', handleRegistrationStatus);
 
       return () => {
         socket.off('event:activated', handleEventActivated);
         socket.off('event:deactivated', handleEventDeactivated);
-        socket.off('registration:added', handleRegistrationAdded);
-        socket.off('registration:status', handleRegistrationStatus);
       };
     }
   }, [socket, user]);
@@ -102,11 +86,10 @@ const Dashboard = () => {
       setLiveEvent(response.data)
       
       // Check if current user is registered
-      if (response.data && user && response.data.registeredBidders) {
-        const registration = response.data.registeredBidders.find((bidder) => {
-          const bidderUserId = bidder?.userId && (bidder.userId._id || bidder.userId)
-          return String(bidderUserId) === String(user.id)
-        })
+      if (response.data && user) {
+        const registration = response.data.registeredBidders.find(
+          bidder => bidder.userId._id === user.id || bidder.userId === user.id
+        )
         setUserRegistration(registration)
       }
     } catch (error) {
@@ -161,7 +144,14 @@ const Dashboard = () => {
       color: 'bg-gradient-to-r from-purple-600 to-pink-600',
       available: user?.role === 'admin'
     },
-    
+    {
+      title: 'Player Management',
+      description: 'Add and edit players',
+      icon: Users,
+      link: '/admin/players',
+      color: 'bg-gradient-to-r from-orange-600 to-red-600',
+      available: user?.role === 'admin'
+    }
   ]
 
   if (loading) {
@@ -232,44 +222,21 @@ const Dashboard = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  {(() => {
-                    if (user?.role !== 'bidder') return null;
-                    const myReg = userRegistration || (liveEvent?.registeredBidders || []).find(b => {
-                      const id = b.userId && (b.userId._id || b.userId);
-                      return String(id) === String(user?.id);
-                    });
-                    if (!myReg) {
-                      return (
-                        <button
-                          onClick={() => setShowRegistrationModal(true)}
-                          className="bg-white text-green-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg flex items-center space-x-2"
-                        >
-                          <UserPlus className="h-4 w-4" />
-                          <span>Register for Auction</span>
-                        </button>
-                      );
-                    }
-                    if (myReg.status === 'approved') {
-                      return (
-                        <Link
-                          to="/auction"
-                          className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2 hover:bg-green-700"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                          <span>Join Event</span>
-                        </Link>
-                      );
-                    }
-                    return (
-                      <div className="flex items-center space-x-3">
-                        <div className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
-                          <CheckCircle className="h-4 w-4" />
-                          <span>Registered as {myReg.teamName}</span>
-                        </div>
-                        <span className="text-xs text-gray-300">(Waiting for admin approval)</span>
-                      </div>
-                    );
-                  })()}
+                  {user?.role === 'bidder' && !userRegistration && (
+                    <button
+                      onClick={() => setShowRegistrationModal(true)}
+                      className="bg-white text-green-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-sm shadow-lg flex items-center space-x-2"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      <span>Register for Auction</span>
+                    </button>
+                  )}
+                  {user?.role === 'bidder' && userRegistration && (
+                    <div className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Registered as {userRegistration.teamName}</span>
+                    </div>
+                  )}
                   {user?.role === 'admin' && (
                     <Link
                       to="/admin"
@@ -305,7 +272,7 @@ const Dashboard = () => {
                 </div>
                 {userRegistration.teamImage && (
                   <img
-                  src={userRegistration.teamImage.startsWith('http') ? userRegistration.teamImage : `http://localhost:5001${userRegistration.teamImage}`}
+                    src={userRegistration.teamImage}
                     alt={userRegistration.teamName}
                     className="w-16 h-16 rounded-full object-cover border-2 border-white/30"
                   />
@@ -350,12 +317,6 @@ const Dashboard = () => {
                     {currentPlayer.name} is currently being auctioned
                   </p>
                 </div>
-                <Link
-                  to="/auction"
-                  className="bg-white text-orange-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-200 text-base shadow-lg"
-                >
-                  Join Now
-                </Link>
               </div>
             </div>
           </div>

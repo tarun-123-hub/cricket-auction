@@ -25,12 +25,22 @@ const Navbar = () => {
   const { isConnected } = useSelector((state) => state.socket)
   const { isEventLive, eventName } = useSelector((state) => state.auction)
 
-  const handleLogout = () => {
-    dispatch(disconnect())
-    // Use local logout for demo; if server session exists, also call logoutUser safely
-    dispatch(localLogout())
-    navigate('/login')
-    try { dispatch(logoutUser()) } catch (_) {}
+  const handleLogout = async () => {
+    try {
+      // Disconnect socket first
+      dispatch(disconnect())
+      
+      // Call server logout if needed (but don't wait for it)
+      dispatch(logoutUser())
+      
+      // Immediately clear local state and navigate
+      dispatch(localLogout())
+      navigate('/login', { replace: true })
+    } catch (error) {
+      // Even if server logout fails, ensure local logout happens
+      dispatch(localLogout())
+      navigate('/login', { replace: true })
+    }
   }
 
   const navItems = [

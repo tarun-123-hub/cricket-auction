@@ -35,11 +35,7 @@ const io = socketIo(server, {
 });
 
 // Security middleware
-// Allow cross-origin loading of static images from the client (Vite/React dev server)
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-  crossOriginEmbedderPolicy: false
-}));
+app.use(helmet());
 app.use(cors(corsOptions));
 
 // Rate limiting
@@ -67,12 +63,8 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 
-// Static files with explicit headers to allow cross-origin
-app.use('/uploads', (req, res, next) => {
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
-  next();
-}, express.static(path.join(__dirname, 'uploads')));
+// Static files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Connect to MongoDB (single initialization handled below)
 
@@ -196,21 +188,6 @@ io.on('connection', (socket) => {
   
   // Admin event management
   if (socket.user.role === 'admin') {
-    socket.on('start-event', async ({ eventId }) => {
-      try {
-        const event = await AuctionEvent.findById(eventId);
-        if (event) {
-          event.isActive = true;
-          await event.save();
-          
-          // Emit to all clients that the event has started
-          io.emit('event:started', { eventId, event });
-        }
-      } catch (error) {
-        socket.emit('error', { message: 'Failed to start event' });
-      }
-    });
-    
     socket.on('admin:create_event', async (payload) => {
       try {
         // This would be handled by the REST API, but we can emit confirmation
@@ -281,18 +258,13 @@ io.on('connection', (socket) => {
           return;
         }
         
-        // Check if user is approved
-        const registrant = event.registeredBidders.find(
+        // Check if user is registered
+        const isRegistered = event.registeredBidders.some(
           bidder => bidder.userId.toString() === socket.user.id
         );
-        const isRegistered = !!registrant;
         
         if (!isRegistered) {
           socket.emit('join:error', { message: 'Not registered for this event' });
-          return;
-        }
-        if (registrant.status !== 'approved') {
-          socket.emit('join:error', { message: 'Registration not approved yet' });
           return;
         }
         

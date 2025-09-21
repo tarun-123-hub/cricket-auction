@@ -56,22 +56,15 @@ const Register = () => {
     }
 
     const { confirmPassword, ...submitData } = formData
-    try {
-      const result = await dispatch(registerUser(submitData)).unwrap()
-      
-      // Force immediate redirection based on role
+    const result = await dispatch(registerUser(submitData))
+    
+    // Manual redirection after successful registration
+    if (result.meta.requestStatus === 'fulfilled') {
       if (submitData.role === 'bidder') {
-        // Small timeout to ensure toast message is visible
-        setTimeout(() => {
-          navigate('/auction-waiting', { replace: true })
-        }, 500)
+        navigate('/auction-waiting')
       } else {
-        setTimeout(() => {
-          navigate('/dashboard', { replace: true })
-        }, 500)
+        navigate('/dashboard')
       }
-    } catch (error) {
-      console.error('Registration failed:', error)
     }
   }
 

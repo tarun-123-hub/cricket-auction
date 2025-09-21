@@ -6,6 +6,33 @@ const AuctionEvent = require('../models/AuctionEvent');
 const Bid = require('../models/Bid');
 const Player = require('../models/Player');
 const { authenticate, requireRole } = require('../middleware/auth');
+const fs = require('fs');
+
+// Configure multer for team image uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/teams/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'team-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
 
 const router = express.Router();
 
@@ -272,37 +299,10 @@ router.get('/live', authenticate, async (req, res) => {
 });
 
 // Register for auction (Bidder only) (place before `/:id`)
-const fs = require('fs');
 const uploadsDir = 'uploads/teams';
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
-
-// Configure multer for team image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/teams/');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'team-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
-  }
-});
 
 router.post('/register', authenticate, upload.single('teamImage'), async (req, res) => {
   try {
@@ -333,10 +333,9 @@ router.post('/register', authenticate, upload.single('teamImage'), async (req, r
       teamName,
       ownerName,
       teamImage: req.file ? `/uploads/teams/${req.file.filename}` : null,
-      userId: req.body.userId || req.user.id,
+      userId: req.user.id,
       purse: liveEvent.teamPurseDefault || 0,
-      status: 'registered',
-      registeredAt: new Date()
+      status: 'registered'
     };
     liveEvent.registeredBidders.push(registration);
     await liveEvent.save();
@@ -493,6 +492,8 @@ router.post('/:id/deactivate', authenticate, requireRole(['admin']), async (req,
   }
 });
 
+// This code has been moved to the top of the file
+
 // Create uploads directory if it doesn't exist
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -647,44 +648,6 @@ router.patch('/bidder/:bidderId/purse', authenticate, requireRole(['admin']), as
     });
   } catch (error) {
     console.error('Error updating purse:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Approve or reject bidder (Admin only)
-router.patch('/bidder/:bidderId/status', authenticate, requireRole(['admin']), async (req, res) => {
-  try {
-    const { bidderId } = req.params;
-    const { status } = req.body; // 'approved' or 'rejected'
-    
-    if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status' });
-    }
-    
-    const liveEvent = await AuctionEvent.findOne({ isLive: true });
-    if (!liveEvent) {
-      return res.status(404).json({ message: 'No live auction event found' });
-    }
-    
-    const bidder = liveEvent.registeredBidders.id(bidderId);
-    if (!bidder) {
-      return res.status(404).json({ message: 'Bidder not found' });
-    }
-    
-    bidder.status = status;
-    await liveEvent.save();
-    
-    if (req.app.get('io')) {
-      req.app.get('io').emit('registration:status', { 
-        eventId: liveEvent._id,
-        bidderId,
-        status
-      });
-    }
-    
-    res.json({ message: 'Status updated', bidder });
-  } catch (error) {
-    console.error('Error updating bidder status:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

@@ -2,12 +2,10 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Upload, User, Users, Trophy } from 'lucide-react'
 import axios from '../api/axios'
-import { useSelector } from 'react-redux'
 import toast from 'react-hot-toast'
 import LoadingSpinner from './LoadingSpinner'
 
 const BidderRegistrationModal = ({ isOpen, onClose, onSuccess, liveEvent }) => {
-  const { user } = useSelector((s) => s.auth)
   const [formData, setFormData] = useState({
     teamName: '',
     ownerName: ''
@@ -52,9 +50,6 @@ const BidderRegistrationModal = ({ isOpen, onClose, onSuccess, liveEvent }) => {
       const submitData = new FormData()
       submitData.append('teamName', formData.teamName.trim())
       submitData.append('ownerName', formData.ownerName.trim())
-      if (user?.id) {
-        submitData.append('userId', user.id)
-      }
       
       if (teamImage) {
         submitData.append('teamImage', teamImage)
@@ -67,7 +62,6 @@ const BidderRegistrationModal = ({ isOpen, onClose, onSuccess, liveEvent }) => {
       })
 
       toast.success('Successfully registered for auction!')
-      toast.info('Wait for the admin to start the auction')
       
       // Reset form
       setFormData({ teamName: '', ownerName: '' })

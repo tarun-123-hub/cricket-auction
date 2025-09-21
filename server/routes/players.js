@@ -1,7 +1,6 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const Player = require('../models/Player');
 const { authenticate, requireRole } = require('../middleware/auth');
 
@@ -42,24 +41,10 @@ const upload = multer({
   }
 });
 
+// fs is already required above
+const fs = require('fs');
 
-// Upload image endpoint
-router.post('/upload', authenticate, requireRole(['admin']), upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No image file provided' });
-    }
-    
-    res.json({
-      message: 'Image uploaded successfully',
-      imagePath: `/uploads/players/${req.file.filename}`
-    });
-  } catch (error) {
-    console.error('Error uploading image:', error);
-    res.status(500).json({ message: 'Failed to upload image' });
-  }
-});
-
+// Get all players
 // Get all players
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -100,21 +85,15 @@ router.post(
   upload.single('image'),
   async (req, res) => {
     try {
-      console.log('Creating player with data:', req.body);
-      
       const playerData = {
-        name: (req.body.name || '').trim(),
-        role: req.body.role,
-        basePrice: parseInt(req.body.basePrice, 10),
-        age: parseInt(req.body.age, 10),
-        country: (req.body.country || '').trim(),
-        battingStyle: req.body.battingStyle,
-        bowlingStyle: req.body.bowlingStyle || 'None'
+        ...req.body,
+        basePrice: parseInt(req.body.basePrice),
+        age: parseInt(req.body.age)
       };
 
       if (req.file) {
-        // Store the correct path in the database
-        playerData.image = `/uploads/players/${req.file.filename}`;
+        // Store only the filename in the database
+        playerData.image = `/uploads/players/${path.basename(req.file.filename)}`;
         console.log('Image uploaded successfully:', req.file.filename, 'Full path:', req.file.path);
       } else {
         console.log('No image file received in request');
@@ -123,26 +102,16 @@ router.post(
       // Parse stats if provided
       if (req.body.stats) {
         try {
-          const stats = typeof req.body.stats === 'string' 
+          playerData.stats = typeof req.body.stats === 'string' 
             ? JSON.parse(req.body.stats) 
             : req.body.stats;
-          playerData.stats = {
-            matches: parseInt(stats.matches || 0, 10),
-            runs: parseInt(stats.runs || 0, 10),
-            wickets: parseInt(stats.wickets || 0, 10),
-            average: parseFloat(stats.average || 0),
-            strikeRate: parseFloat(stats.strikeRate || 0)
-          };
         } catch (e) {
           console.error('Error parsing stats:', e);
-          playerData.stats = { matches: 0, runs: 0, wickets: 0, average: 0, strikeRate: 0 };
         }
       }
 
       const player = new Player(playerData);
-      console.log('Saving player:', player);
       await player.save();
-      console.log('Player saved successfully:', player._id);
 
       // Emit socket event
       if (req.app && req.app.get('io')) {

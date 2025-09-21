@@ -135,15 +135,6 @@ export const initializeSocket = () => (dispatch, getState) => {
       const name = payload?.event?.eventName || payload?.eventName || 'Auction Event'
       toast.success(`Live Event: ${name}`)
     })
-    
-    // Event started
-    socket.on('event:started', (payload) => {
-      const name = payload?.event?.eventName || payload?.eventName || 'Auction Event'
-      toast.success(`Auction Event Started: ${name}`)
-      
-      // Redirect to auction room
-      window.location.href = '/auction-room'
-    })
 
     // Mirror: update redux auction state minimal without importing store slice here
     // This keeps the toast and leaves state syncing to existing listeners

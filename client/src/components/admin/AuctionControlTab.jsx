@@ -107,7 +107,6 @@ const AuctionControlTab = () => {
   
   const handleEventStarted = (data) => {
     toast.success('Auction event started successfully!');
-    navigate('/auction-room');
   };
   
   const handleStartEvent = (eventId) => {
@@ -266,97 +265,57 @@ const AuctionControlTab = () => {
 
                 {/* Action Buttons */}
                 <div className="flex space-x-2">
-                  {/* Draft Status - Show Activate Button */}
                   {event.status === 'draft' && (
-                    <>
-                      <button
-                        onClick={() => handleActivateEvent(event._id)}
-                        disabled={activatingId === event._id}
-                        className={`flex-1 ${activatingId === event._id ? 'bg-green-800' : 'bg-green-600 hover:bg-green-700'} disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all duration-200 transform hover:scale-105`}
-                      >
-                        <Play className="h-4 w-4" />
-                        <span>{activatingId === event._id ? 'Activating...' : 'Activate'}</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEventToDelete(event);
-                          setShowDeleteModal(true);
-                        }}
-                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center transition-all duration-200 transform hover:scale-105"
-                        title="Delete event"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </>
+                    <button
+                      onClick={() => handleActivateEvent(event._id)}
+                      disabled={activatingId === event._id}
+                      className={`flex-1 ${activatingId === event._id ? 'bg-green-800' : 'bg-green-600 hover:bg-green-700'} disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-colors duration-200`}
+                    >
+                      <Play className="h-4 w-4" />
+                      <span>{activatingId === event._id ? 'Activating...' : 'Activate'}</span>
+                    </button>
                   )}
                   
-                  {/* Active Status - Show Activated (disabled) + Deactivate + Delete */}
                   {event.status === 'active' && (
                     <>
                       <button
-                        disabled
-                        className="flex-1 bg-green-500/30 border border-green-500/50 text-green-300 px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 cursor-not-allowed opacity-80"
+                        onClick={() => handleStartEvent(event._id)}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-colors duration-200"
                       >
-                        <CheckCircle className="h-4 w-4" />
-                        <span>Activated</span>
+                        <Play className="h-4 w-4" />
+                        <span>Start Event</span>
                       </button>
                       <button
                         onClick={() => handleDeactivateEvent(event._id)}
-                        className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all duration-200 transform hover:scale-105"
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-colors duration-200"
                       >
-                        <Pause className="h-4 w-4" />
+                        <XCircle className="h-4 w-4" />
                         <span>Deactivate</span>
                       </button>
-                      <button
-                        onClick={() => {
-                          setEventToDelete(event);
-                          setShowDeleteModal(true);
-                        }}
-                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center transition-all duration-200 transform hover:scale-105"
-                        title="Delete event"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
                     </>
                   )}
                   
-                  {/* Paused Status - Show Activate Button */}
                   {event.status === 'paused' && (
-                    <>
-                      <button
-                        onClick={() => handleActivateEvent(event._id)}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all duration-200 transform hover:scale-105"
-                      >
-                        <Play className="h-4 w-4" />
-                        <span>Activate</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEventToDelete(event);
-                          setShowDeleteModal(true);
-                        }}
-                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center transition-all duration-200 transform hover:scale-105"
-                        title="Delete event"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </>
-                  )}
-                  
-                  {/* Ended Status - Show only Delete */}
-                  {event.status === 'ended' && (
                     <button
-                      onClick={() => {
-                        setEventToDelete(event);
-                        setShowDeleteModal(true);
-                      }}
-                      className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all duration-200 transform hover:scale-105"
-                      title="Delete event"
+                      onClick={() => handleActivateEvent(event._id)}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-colors duration-200"
                     >
-                      <Trash2 className="h-4 w-4" />
-                      <span>Delete</span>
+                      <Play className="h-4 w-4" />
+                      <span>Activate</span>
                     </button>
                   )}
+                  
+                  <button
+                    onClick={() => {
+                      setEventToDelete(event);
+                      setShowDeleteModal(true);
+                    }}
+                    disabled={event.status === 'active'}
+                    className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center transition-colors duration-200"
+                    title={event.status === 'active' ? 'Deactivate event first to delete' : 'Delete event'}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               </motion.div>
             ))}
