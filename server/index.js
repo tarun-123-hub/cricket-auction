@@ -186,6 +186,30 @@ io.on('connection', (socket) => {
   // Send current auction state to newly connected user
   socket.emit('auction-state', auctionState);
   
+  // Handle reconnection - rejoin appropriate rooms
+  socket.on('rejoin-rooms', async () => {
+    try {
+      // Rejoin role-based room
+      socket.join(socket.user.role);
+      
+      // If there's an active auction, rejoin auction room
+      const liveEvent = await AuctionEvent.findOne({ isLive: true });
+      if (liveEvent && socket.user.role === 'bidder') {
+        const bidder = liveEvent.registeredBidders.find(
+          b => b.userId.toString() === socket.user.id && b.status === 'approved'
+        );
+        if (bidder) {
+          socket.join(`auction:${liveEvent._id}`);
+        }
+      }
+      
+      // Send current state
+      socket.emit('auction-state', auctionState);
+    } catch (error) {
+      console.error('Error rejoining rooms:', error);
+    }
+  });
+  
   // Admin event management
   if (socket.user.role === 'admin') {
     socket.on('admin:create_event', async (payload) => {
@@ -210,6 +234,71 @@ io.on('connection', (socket) => {
         }
       } catch (error) {
         socket.emit('error', { message: 'Failed to activate event' });
+      }
+    });
+    
+    socket.on('start-auction-event', async ({ eventId }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId)
+          .populate('eventPlayers')
+          .populate('registeredBidders.userId', 'username email');
+        
+        if (!event) {
+          socket.emit('error', { message: 'Event not found' });
+          return;
+        }
+        
+        if (!event.isLive) {
+          socket.emit('error', { message: 'Event is not live' });
+          return;
+        }
+        
+        // Check if there are approved bidders
+        const approvedBidders = event.registeredBidders.filter(b => b.status === 'approved');
+        if (approvedBidders.length === 0) {
+          socket.emit('error', { message: 'No approved bidders found' });
+          return;
+        }
+        
+        // Randomize player order
+        const shuffledPlayers = [...event.eventPlayers].sort(() => Math.random() - 0.5);
+        
+        // Update auction state
+        event.isActive = true;
+        if (shuffledPlayers.length > 0) {
+          event.currentPlayer = shuffledPlayers[0]._id;
+          event.currentBid = shuffledPlayers[0].basePrice;
+        }
+        await event.save();
+        
+        // Update global auction state
+        await initializeAuctionState();
+        auctionState.remainingPlayers = shuffledPlayers;
+        auctionState.currentPlayerIndex = 0;
+        
+        // Emit to all connected clients
+        io.emit('auction:started', {
+          eventId,
+          currentPlayer: shuffledPlayers[0],
+          auctionState
+        });
+        
+        // Start the first player auction
+        if (shuffledPlayers.length > 0) {
+          auctionState.isActive = true;
+          auctionState.currentPlayer = shuffledPlayers[0];
+          auctionState.currentBid = shuffledPlayers[0].basePrice;
+          auctionState.baseBid = shuffledPlayers[0].basePrice;
+          auctionState.bidders = [];
+          auctionState.timer = 60;
+          
+          io.emit('auction-started', auctionState);
+          startTimer();
+        }
+        
+      } catch (error) {
+        console.error('Error starting auction event:', error);
+        socket.emit('error', { message: 'Failed to start auction' });
       }
     });
     
@@ -247,6 +336,37 @@ io.on('connection', (socket) => {
         socket.emit('registration:success', { eventId });
       } catch (error) {
         socket.emit('registration:error', { message: error.message });
+      }
+    });
+    
+    socket.on('bidder:join-auction', async ({ eventId }) => {
+      try {
+        const event = await AuctionEvent.findById(eventId)
+          .populate('registeredBidders.userId', 'username email');
+        
+        if (!event || !event.isLive) {
+          socket.emit('join:error', { message: 'Event not active' });
+          return;
+        }
+        
+        // Check if user is registered and approved
+        const bidder = event.registeredBidders.find(
+          b => b.userId._id.toString() === socket.user.id && b.status === 'approved'
+        );
+        
+        if (!bidder) {
+          socket.emit('join:error', { message: 'Not approved for this event' });
+          return;
+        }
+        
+        socket.join(`auction:${eventId}`);
+        socket.emit('join:success', { eventId });
+        
+        // Send current auction state
+        socket.emit('auction-state', auctionState);
+        
+      } catch (error) {
+        socket.emit('join:error', { message: error.message });
       }
     });
     
@@ -304,6 +424,19 @@ io.on('connection', (socket) => {
   socket.on('purse-updated', async () => {
     await initializeAuctionState();
     io.emit('auction-state', auctionState);
+  });
+  
+  // Handle team approval updates
+  socket.on('team-approved', async (data) => {
+    await initializeAuctionState();
+    io.emit('auction-state', auctionState);
+    
+    // Emit specific approval event to the approved user
+    io.emit('team:approved', {
+      teamId: data.teamId,
+      eventId: data.eventId,
+      userId: data.userId
+    });
   });
   
   // Admin controls
@@ -595,6 +728,22 @@ function startTimer() {
       const result = auctionState.bidders.length > 0 
         ? { sold: true, team: auctionState.bidders[auctionState.bidders.length - 1].team }
         : { sold: false };
+      
+      // Update player status in database
+      if (auctionState.currentPlayer) {
+        Player.findById(auctionState.currentPlayer._id).then(player => {
+          if (player) {
+            if (result.sold) {
+              player.auctionStatus = 'sold';
+              player.finalPrice = auctionState.currentBid;
+              player.soldTo = result.team;
+            } else {
+              player.auctionStatus = 'unsold';
+            }
+            player.save();
+          }
+        }).catch(err => console.error('Error updating player:', err));
+      }
       
       io.emit('auction-ended', {
         player: auctionState.currentPlayer,

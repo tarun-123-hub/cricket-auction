@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { 
-  Gavel, 
+  Gavel,
   Users, 
   Trophy, 
   BarChart3, 
@@ -19,8 +19,10 @@ import {
 import axios from '../api/axios'
 import LoadingSpinner from '../components/LoadingSpinner'
 import BidderRegistrationModal from '../components/BidderRegistrationModal'
+import toast from 'react-hot-toast'
 
 const Dashboard = () => {
+  const navigate = useNavigate()
   const { user } = useSelector((state) => state.auth)
   const { isConnected, socket } = useSelector((state) => state.socket)
   const { isActive, currentPlayer, soldPlayers, unsoldPlayers } = useSelector((state) => state.auction)
@@ -30,6 +32,7 @@ const Dashboard = () => {
   const [showRegistrationModal, setShowRegistrationModal] = useState(false)
   const [userRegistration, setUserRegistration] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [canJoinAuction, setCanJoinAuction] = useState(false)
 
   useEffect(() => {
     fetchStats()
@@ -46,8 +49,10 @@ const Dashboard = () => {
             bidder => bidder.userId._id === user.id || bidder.userId === user.id
           );
           setUserRegistration(registration);
+          setCanJoinAuction(registration && registration.status === 'approved');
         } else {
           setUserRegistration(null);
+          setCanJoinAuction(false);
         }
       };
 
@@ -55,14 +60,25 @@ const Dashboard = () => {
         console.log('Received event:deactivated:', data);
         setLiveEvent(null);
         setUserRegistration(null);
+        setCanJoinAuction(false);
+      };
+
+      const handleTeamApproved = (data) => {
+        if (data.teamId && userRegistration && userRegistration._id === data.teamId) {
+          setUserRegistration(prev => ({ ...prev, status: 'approved' }));
+          setCanJoinAuction(true);
+          toast.success('Your team has been approved! You can now join the auction.');
+        }
       };
 
       socket.on('event:activated', handleEventActivated);
       socket.on('event:deactivated', handleEventDeactivated);
+      socket.on('team:approved', handleTeamApproved);
 
       return () => {
         socket.off('event:activated', handleEventActivated);
         socket.off('event:deactivated', handleEventDeactivated);
+        socket.off('team:approved', handleTeamApproved);
       };
     }
   }, [socket, user]);
@@ -91,6 +107,7 @@ const Dashboard = () => {
           bidder => bidder.userId._id === user.id || bidder.userId === user.id
         )
         setUserRegistration(registration)
+        setCanJoinAuction(registration && registration.status === 'approved')
       }
     } catch (error) {
       console.error('Error fetching live event:', error)
@@ -100,6 +117,15 @@ const Dashboard = () => {
   const handleRegistrationSuccess = () => {
     setShowRegistrationModal(false)
     fetchLiveEvent()
+  }
+
+  const handleJoinAuction = () => {
+    if (socket && liveEvent) {
+      socket.emit('bidder:join-auction', { eventId: liveEvent._id });
+      navigate('/auction');
+    } else {
+      toast.error('Unable to join auction. Please try again.');
+    }
   }
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
@@ -231,10 +257,25 @@ const Dashboard = () => {
                       <span>Register for Auction</span>
                     </button>
                   )}
-                  {user?.role === 'bidder' && userRegistration && (
+                  {user?.role === 'bidder' && userRegistration && userRegistration.status !== 'approved' && (
                     <div className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
                       <CheckCircle className="h-4 w-4" />
-                      <span>Registered as {userRegistration.teamName}</span>
+                      <span>Awaiting Approval - {userRegistration.teamName}</span>
+                    </div>
+                  )}
+                  {user?.role === 'bidder' && userRegistration && userRegistration.status === 'approved' && (
+                    <div className="flex space-x-3">
+                      <div className="bg-green-600 text-white px-4 py-3 rounded-lg font-bold text-sm shadow-lg flex items-center space-x-2">
+                        <CheckCircle className="h-4 w-4" />
+                        <span>Approved - {userRegistration.teamName}</span>
+                      </div>
+                      <button
+                        onClick={handleJoinAuction}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition-colors duration-200 text-sm shadow-lg flex items-center space-x-2"
+                      >
+                        <Gavel className="h-4 w-4" />
+                        <span>Join Now</span>
+                      </button>
                     </div>
                   )}
                   {user?.role === 'admin' && (

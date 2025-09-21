@@ -614,6 +614,54 @@ router.post('/register', authenticate, upload.single('teamImage'), async (req, r
   }
 });
 
+router.patch('/bidder/:bidderId/status', authenticate, requireRole(['admin']), async (req, res) => {
+  try {
+    const { bidderId } = req.params;
+    const { status } = req.body;
+    
+    const liveEvent = await AuctionEvent.findOne({ isLive: true });
+    if (!liveEvent) {
+      return res.status(404).json({ message: 'No live auction event found' });
+    }
+    
+    const bidder = liveEvent.registeredBidders.id(bidderId);
+    if (!bidder) {
+      return res.status(404).json({ message: 'Bidder not found' });
+    }
+    
+    bidder.status = status;
+    await liveEvent.save();
+    
+    // Emit socket event for real-time update
+    if (req.app.get('io')) {
+      req.app.get('io').emit('team:status_updated', { 
+        eventId: liveEvent._id, 
+        bidderId, 
+        status,
+        teamName: bidder.teamName,
+        userId: bidder.userId
+      });
+      
+      // If approved, emit specific approval event
+      if (status === 'approved') {
+        req.app.get('io').emit('team:approved', { 
+          teamId: bidderId,
+          eventId: liveEvent._id,
+          userId: bidder.userId
+        });
+      }
+    }
+    
+    res.json({
+      message: `Team ${status} successfully`,
+      bidder
+    });
+  } catch (error) {
+    console.error('Error updating bidder status:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Update bidder purse (Admin only)
 router.patch('/bidder/:bidderId/purse', authenticate, requireRole(['admin']), async (req, res) => {
   try {

@@ -112,6 +112,11 @@ const TeamsTab = () => {
       await axios.patch(`/auction-event/bidder/${teamId}/status`, { status: 'approved' });
       setTeams(prev => prev.map(t => t._id === teamId ? { ...t, status: 'approved' } : t));
       toast.success('Team approved!');
+      
+      // Emit socket event for real-time update
+      if (socket) {
+        socket.emit('team:approved', { teamId, eventId: selectedEvent._id });
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to approve team');
     }

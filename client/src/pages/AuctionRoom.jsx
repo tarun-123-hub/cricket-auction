@@ -92,6 +92,10 @@ const AuctionRoom = () => {
       toast.success(`Auction started for ${state.currentPlayer?.name}`);
     };
 
+    const handleAuctionEventStarted = (data) => {
+      dispatch(setAuctionState(data.auctionState));
+      toast.success('Auction event has started!');
+    };
     const handleAuctionEnded = (data) => {
       dispatch(auctionEnded(data));
       if (data.result.sold) {
@@ -115,6 +119,7 @@ const AuctionRoom = () => {
 
     socket.on('auction-state', handleAuctionState);
     socket.on('auction-started', handleAuctionStarted);
+    socket.on('auction:started', handleAuctionEventStarted);
     socket.on('auction-ended', handleAuctionEnded);
     socket.on('new-bid', handleNewBid);
     socket.on('timer-update', handleTimerUpdate);
@@ -123,6 +128,7 @@ const AuctionRoom = () => {
     return () => {
       socket.off('auction-state', handleAuctionState);
       socket.off('auction-started', handleAuctionStarted);
+      socket.off('auction:started', handleAuctionEventStarted);
       socket.off('auction-ended', handleAuctionEnded);
       socket.off('new-bid', handleNewBid);
       socket.off('timer-update', handleTimerUpdate);

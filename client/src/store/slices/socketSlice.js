@@ -82,6 +82,23 @@ export const initializeSocket = () => (dispatch, getState) => {
             handlers['new-message'] && handlers['new-message'](message)
             return
           }
+          if (event === 'bidder:join-auction') {
+            // Simulate successful join in demo mode
+            setTimeout(() => {
+              handlers['join:success'] && handlers['join:success']({ eventId: payload?.eventId })
+            }, 100)
+            return
+          }
+          if (event === 'start-auction-event') {
+            // Simulate auction start in demo mode
+            setTimeout(() => {
+              handlers['auction:started'] && handlers['auction:started']({ 
+                eventId: payload?.eventId,
+                auctionState: { isActive: true, currentPlayer: null }
+              })
+            }, 100)
+            return
+          }
           handlers[event] && handlers[event](payload)
         },
         disconnect: () => {},
@@ -116,6 +133,12 @@ export const initializeSocket = () => (dispatch, getState) => {
       dispatch(setConnected(false))
       if (reason !== 'io client disconnect') {
         toast.error('Disconnected from auction room')
+        // Attempt to reconnect after a delay
+        setTimeout(() => {
+          if (!socket.connected) {
+            socket.connect()
+          }
+        }, 2000)
       }
     })
 
@@ -123,6 +146,10 @@ export const initializeSocket = () => (dispatch, getState) => {
       console.error('Socket connection error:', error)
       dispatch(setConnected(false))
       toast.error('Failed to connect to auction room')
+      // Retry connection after a delay
+      setTimeout(() => {
+        socket.connect()
+      }, 3000)
     })
 
     // Chat events
@@ -134,6 +161,16 @@ export const initializeSocket = () => (dispatch, getState) => {
     socket.on('event:activated', (payload) => {
       const name = payload?.event?.eventName || payload?.eventName || 'Auction Event'
       toast.success(`Live Event: ${name}`)
+    })
+
+    // Team approval notifications
+    socket.on('team:approved', (payload) => {
+      toast.success('Your team has been approved! You can now join the auction.')
+    })
+
+    // Auction started notifications
+    socket.on('auction:started', (payload) => {
+      toast.success('Auction has started!')
     })
 
     // Mirror: update redux auction state minimal without importing store slice here

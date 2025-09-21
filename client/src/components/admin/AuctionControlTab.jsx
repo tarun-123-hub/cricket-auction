@@ -26,6 +26,7 @@ const AuctionControlTab = () => {
   const { socket } = useSelector((state) => state.socket);
   const [activatingId, setActivatingId] = useState(null);
   const navigate = useNavigate();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchEvents();
@@ -109,14 +110,17 @@ const AuctionControlTab = () => {
     toast.success('Auction event started successfully!');
   };
   
-  const handleStartEvent = (eventId) => {
+  const handleStartAuction = (eventId) => {
     if (!socket) {
       toast.error('Socket connection not available');
       return;
     }
     
-    socket.emit('start-event', { eventId });
-    toast.success('Starting auction event...');
+    socket.emit('start-auction-event', { eventId });
+    toast.success('Starting auction...');
+    
+    // Redirect admin to auction room
+    navigate('/auction');
   };
 
   const handleActivateEvent = async (eventId) => {
@@ -279,11 +283,11 @@ const AuctionControlTab = () => {
                   {event.status === 'active' && (
                     <>
                       <button
-                        onClick={() => handleStartEvent(event._id)}
+                        onClick={() => handleStartAuction(event._id)}
                         className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-colors duration-200"
                       >
                         <Play className="h-4 w-4" />
-                        <span>Start Event</span>
+                        <span>Start Auction</span>
                       </button>
                       <button
                         onClick={() => handleDeactivateEvent(event._id)}
